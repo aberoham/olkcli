@@ -81,6 +81,7 @@ olk mail reply <ID> --body "<p>Thanks</p>" --html
 olk mail reply <ID> --body "Thanks" --draft
 olk mail reply <ID> --body '<p>Thanks</p>' --html --draft
 olk mail reply <ID> --body '<p>Thanks all</p>' --reply-all --html --draft
+olk mail reply <ID> --body '<p><img src="cid:steps"></p>' --html --draft --inline steps=steps.png
 olk mail forward <ID> --to a@b.com [--comment "FYI"] [--html]
 olk mail forward <ID> --to a@b.com --comment "<p>FYI</p>" --html
 olk mail move <ID> <FOLDER>
@@ -96,8 +97,16 @@ olk mail attachments <ID> --attachment-id <ATT_ID> [--out DIR]           # downl
 ```
 
 `mail reply --draft` uses Outlook's reply action to create a true threaded
-draft with quoted message history. It returns the created draft and does not
-send it; omit `--draft` to send the reply immediately.
+draft with quoted message history. HTML is inserted ahead of Outlook's
+generated history so formatting does not replace the quote. It returns the
+created draft and does not send it; omit `--draft` to send the reply
+immediately.
+
+For inline images, reference each image in the HTML as `cid:CID`, then supply
+the matching local file with a repeatable `--inline CID=PATH` flag. CIDs must be
+unique, files must be images, and each must be under 3 MB. This works on
+`mail reply --html --draft` and `mail drafts create --html`; it is not available
+on immediate replies, sends, or forwards.
 
 For a bounded mail inventory, use:
 
@@ -141,6 +150,7 @@ Well-known folder names: `inbox`, `sentitems`, `drafts`, `deleteditems`, `junkem
 ```bash
 olk mail drafts list [-n 25]
 olk mail drafts create --to a@b.com --subject "Draft" --body "WIP" [--cc X] [--bcc X] [--html]
+olk mail drafts create --to a@b.com --subject "Steps" --body '<img src="cid:steps">' --html --inline steps=steps.png
 echo "WIP" | olk mail drafts create --to a@b.com --subject "Draft"       # body from stdin
 olk mail drafts send <DRAFT_ID>
 olk mail drafts delete <DRAFT_ID> --force
