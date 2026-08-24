@@ -33,7 +33,10 @@ olk mail batch <ID> [--id ID ...]
 olk mail thread <CONVERSATION_ID>
 olk mail delta [--token TOKEN]
 olk mail send --to EMAIL --subject SUBJECT --body BODY [--html]
-olk mail reply <ID> --body BODY [--reply-all] [--html]
+olk mail reply <ID> --body BODY [--reply-all] [--html] [--draft]
+olk mail reply <ID> --body "Thanks" --draft
+olk mail reply <ID> --body '<p>Thanks</p>' --html --draft
+olk mail reply <ID> --body '<p>Thanks all</p>' --reply-all --html --draft
 olk mail forward <ID> --to EMAIL [--comment COMMENT] [--html]
 olk mail mark <ID> read|unread
 olk mail move <ID> --folder ID
@@ -47,6 +50,10 @@ olk mail importance <ID> low|normal|high
 olk mail ooo get|set|off
 olk mail rules list|create|delete
 ```
+
+`mail reply --draft` creates a true threaded Outlook reply or reply-all draft,
+including Outlook's quoted history, and returns its draft ID and subject. It
+does not send; without `--draft`, replies retain their immediate-send behavior.
 
 ## Calendar
 

@@ -438,6 +438,14 @@ const (
 		"that mailbox, so the message ID must be one listed from it: IDs are scoped to a mailbox, " +
 		"and an ID taken from your own will not resolve in a shared one"
 	replyGrantHint = sendGrantHint + ".\n\n" + replyIDHint
+
+	replyDraftGrantHint = "Creating a reply draft in another mailbox needs the Mail.ReadWrite.Shared " +
+		"scope (sign in again with --scope Mail.ReadWrite.Shared) and Full Access on that mailbox in " +
+		"Exchange. It does not require Mail.Send.Shared, Send As, or Send on Behalf Of because the " +
+		"draft is not sent"
+	replyDraftIDHint = "Creating a reply draft reads the original from that mailbox, so the message " +
+		"ID must be one listed from it: IDs are scoped to a mailbox, and an ID taken from your own " +
+		"will not resolve in a shared one"
 )
 
 func sharedMailboxError(action, target, hint string, err error) error {
@@ -455,6 +463,21 @@ func sharedMailboxError(action, target, hint string, err error) error {
 		guidance = replyIDHint
 	}
 	format := "%s as %s: %s"
+	if guidance != "" {
+		return wrapGraph(err, format+"\n\n%s", action, target, message, guidance)
+	}
+	return wrapGraph(err, format, action, target, message)
+}
+
+func sharedMailboxReplyDraftError(action, target string, err error) error {
+	message := graphErrorMessage(err)
+	guidance := ""
+	if delegatedPermissionRefusal(err, message) {
+		guidance = replyDraftGrantHint
+	} else if delegatedMessageNotFound(err, message) {
+		guidance = replyDraftIDHint
+	}
+	format := "%s in %s: %s"
 	if guidance != "" {
 		return wrapGraph(err, format+"\n\n%s", action, target, message, guidance)
 	}
@@ -522,6 +545,56 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment st
 		return fmt.Errorf("%s: %w", action, err)
 	}
 	return nil
+}
+
+// CreateReplyDraft creates a real Outlook reply draft in the target mailbox,
+// or in the signed-in user's own mailbox when target is empty. Graph associates
+// the returned draft with the original conversation and supplies the quoted
+// message history; sending the draft is a separate operation.
+func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID, content string, replyAll, isHTML bool) (*DraftMessage, error) {
+	if err := c.ensureWritable(); err != nil {
+		return nil, err
+	}
+	if err := validateID(messageID, "message ID"); err != nil {
+		return nil, err
+	}
+
+	action := "creating reply draft"
+	message := c.targetUser(target).Messages().ByMessageId(messageID)
+	var (
+		result models.Messageable
+		err    error
+	)
+	if replyAll {
+		action = "creating reply-all draft"
+		body := users.NewItemMessagesItemCreateReplyAllPostRequestBody()
+		if isHTML {
+			body.SetMessage(htmlMessageBody(content))
+		} else {
+			body.SetComment(&content)
+		}
+		result, err = message.CreateReplyAll().Post(ctx, body, nil)
+	} else {
+		body := users.NewItemMessagesItemCreateReplyPostRequestBody()
+		if isHTML {
+			body.SetMessage(htmlMessageBody(content))
+		} else {
+			body.SetComment(&content)
+		}
+		result, err = message.CreateReply().Post(ctx, body, nil)
+	}
+	if err != nil {
+		if target != "" {
+			return nil, sharedMailboxReplyDraftError(action, target, err)
+		}
+		return nil, fmt.Errorf("%s: %w", action, err)
+	}
+	if result == nil {
+		return nil, fmt.Errorf("%s: Graph returned no draft", action)
+	}
+
+	draft := convertDraft(result)
+	return &draft, nil
 }
 
 // ForwardMessage forwards a message from the target mailbox, or from the

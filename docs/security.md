@@ -10,7 +10,7 @@
 ## Capability controls
 
 - `--no-write` blocks all Graph mutations.
-- `--no-send` blocks mail and meeting sends while allowing other guarded writes.
+- `--no-send` blocks immediate mail, reply, forward, draft-send, and meeting sends while allowing other guarded writes, including `mail reply --draft` creation.
 - `--no-input` prevents prompts in unattended execution.
 - MCP requires explicit tool-tier opt-ins for mutations.
 
