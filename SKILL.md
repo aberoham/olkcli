@@ -64,7 +64,7 @@ olk auth clean --force                          # remove ALL stored accounts and
 ## Mail
 
 ```bash
-olk mail list [-n 25] [-f FOLDER] [-u] [--from SENDER] [--after DATE] [--before DATE] [--focused] [--other] [--order newest|oldest] [--select FIELDS]
+olk mail list [-n 25] [-f FOLDER_ID_OR_PATH] [-u] [--from SENDER] [--after DATE] [--before DATE] [--focused] [--other] [--order newest|oldest] [--select FIELDS]
 # --order cannot be combined with --focused or --other
 olk mail get <ID> [--format full|text|html]
 olk mail send --to a@b.com --subject "Hi" --body "Hello"                  # plain
@@ -78,10 +78,10 @@ olk mail search "from:boss@co.com subject:urgent" [-n 25]                 # KQL
 olk mail thread <CONVERSATION_ID> [--top 50 | --complete]               # one conversation
 olk mail reply <ID> --body "Thanks" [--reply-all]
 olk mail forward <ID> --to a@b.com [--comment "FYI"]
-olk mail move <ID> <FOLDER>
+olk mail move <ID> <FOLDER_ID_OR_PATH>                                 # e.g. Inbox/2026
 olk mail delete <ID> --force
 olk mail mark <ID> --read | --unread
-olk mail folders                                                          # list folders
+olk mail folders                                                          # list all visible folders recursively
 olk mail folders create -n "Project X"
 olk mail folders rename <FOLDER_ID> -n "New Name"
 olk mail folders delete <FOLDER_ID> --force
@@ -95,6 +95,11 @@ For a bounded mail inventory, use:
 ```bash
 olk mail list --folder inbox --top 1000 --order oldest --json --results-only
 ```
+
+`--folder` and the `mail move` destination accept slash-separated display-name
+paths such as `Inbox/2026`; paths are resolved to Graph folder IDs by walking
+each level. A single display name such as `2026` is not a path and can be
+ambiguous, so use either its ID or its full path.
 
 `--order` accepts `newest` (the default) or `oldest`. `--top` bounds the total
 result, not each provider page. `olk` follows pages internally until it reaches

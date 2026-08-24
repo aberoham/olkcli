@@ -26,7 +26,7 @@ olk whoami
 ## Mail
 
 ```bash
-olk mail list [-n N] [--folder ID] [--from EMAIL] [--unread] [--focused|--other]
+olk mail list [-n N] [--folder ID_OR_PATH] [--from EMAIL] [--unread] [--focused|--other]
 olk mail get <ID> [--body-format text|html]
 olk mail search <KQL>
 olk mail batch <ID> [--id ID ...]
@@ -36,10 +36,10 @@ olk mail send --to EMAIL --subject SUBJECT --body BODY [--html]
 olk mail reply <ID> --body BODY [--all]
 olk mail forward <ID> --to EMAIL
 olk mail mark <ID> read|unread
-olk mail move <ID> --folder ID
+olk mail move <ID> ID_OR_PATH
 olk mail delete <ID> --force
 olk mail attachments <ID> --attachment-id ID
-olk mail folders list|create|rename|delete
+olk mail folders list|create|rename|delete  # list traverses visible child folders
 olk mail drafts list|create|send|delete
 olk mail flag <ID> flagged|complete|notFlagged
 olk mail categorize <ID> --category NAME

@@ -88,12 +88,13 @@ var messageDetailSelect = []string{
 
 // MailFolder is a simplified folder representation
 type MailFolder struct {
-	ID             string `json:"id"`
-	WellKnownName  string `json:"wellKnownName,omitempty"`
-	DisplayName    string `json:"displayName" untrusted:"true"`
-	TotalCount     int32  `json:"totalItemCount"`
-	UnreadCount    int32  `json:"unreadItemCount"`
-	ParentFolderID string `json:"parentFolderId,omitempty"`
+	ID               string `json:"id"`
+	WellKnownName    string `json:"wellKnownName,omitempty"`
+	DisplayName      string `json:"displayName" untrusted:"true"`
+	TotalCount       int32  `json:"totalItemCount"`
+	UnreadCount      int32  `json:"unreadItemCount"`
+	ChildFolderCount int32  `json:"childFolderCount"`
+	ParentFolderID   string `json:"parentFolderId,omitempty"`
 }
 
 // protectedWellKnownMailFolders is the canonical folder set used by guarded
@@ -610,26 +611,6 @@ func (c *Client) MarkMessage(ctx context.Context, messageID string, isRead bool)
 	return nil
 }
 
-// ListMailFolders returns folders from the target mailbox, or the signed-in
-// user's mailbox when target is empty. See ListMessages for scope requirements.
-func (c *Client) ListMailFolders(ctx context.Context, target string) ([]MailFolder, error) {
-	var top int32 = 100
-	resp, err := c.targetUser(target).MailFolders().Get(ctx, &users.ItemMailFoldersRequestBuilderGetRequestConfiguration{
-		QueryParameters: &users.ItemMailFoldersRequestBuilderGetQueryParameters{
-			Top: &top,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing folders: %w", err)
-	}
-
-	folders := make([]MailFolder, 0, len(resp.GetValue()))
-	for _, f := range resp.GetValue() {
-		folders = append(folders, convertMailFolder(f))
-	}
-	return folders, nil
-}
-
 // GetWellKnownMailFolder resolves one guarded move destination by its canonical
 // Graph identifier. It intentionally does not infer identity from localized or
 // user-editable display names.
@@ -985,6 +966,9 @@ func convertMailFolder(value models.MailFolderable) MailFolder {
 	}
 	if value.GetUnreadItemCount() != nil {
 		folder.UnreadCount = *value.GetUnreadItemCount()
+	}
+	if value.GetChildFolderCount() != nil {
+		folder.ChildFolderCount = *value.GetChildFolderCount()
 	}
 	if value.GetParentFolderId() != nil {
 		folder.ParentFolderID = *value.GetParentFolderId()
