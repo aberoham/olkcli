@@ -33,8 +33,8 @@ olk mail batch <ID> [--id ID ...]
 olk mail thread <CONVERSATION_ID>
 olk mail delta [--token TOKEN]
 olk mail send --to EMAIL --subject SUBJECT --body BODY [--html]
-olk mail reply <ID> --body BODY [--all]
-olk mail forward <ID> --to EMAIL
+olk mail reply <ID> --body BODY [--reply-all] [--html]
+olk mail forward <ID> --to EMAIL [--comment COMMENT] [--html]
 olk mail mark <ID> read|unread
 olk mail move <ID> --folder ID
 olk mail delete <ID> --force

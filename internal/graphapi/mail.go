@@ -485,7 +485,7 @@ func delegatedMessageNotFound(err error, message string) bool {
 // was listed from. Without a target, an ID belonging to a shared mailbox fails to
 // resolve at all, which is why replying from one was previously impossible rather
 // than merely mis-attributed.
-func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment string, replyAll bool) error {
+func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment string, replyAll, isHTML bool) error {
 	if err := c.ensureMaySend(); err != nil {
 		return err
 	}
@@ -500,11 +500,19 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment st
 	var err error
 	if replyAll {
 		body := users.NewItemMessagesItemReplyAllPostRequestBody()
-		body.SetComment(&comment)
+		if isHTML {
+			body.SetMessage(htmlMessageBody(comment))
+		} else {
+			body.SetComment(&comment)
+		}
 		err = c.targetUser(target).Messages().ByMessageId(messageID).ReplyAll().Post(ctx, body, nil)
 	} else {
 		body := users.NewItemMessagesItemReplyPostRequestBody()
-		body.SetComment(&comment)
+		if isHTML {
+			body.SetMessage(htmlMessageBody(comment))
+		} else {
+			body.SetComment(&comment)
+		}
 		err = c.targetUser(target).Messages().ByMessageId(messageID).Reply().Post(ctx, body, nil)
 	}
 	if err != nil {
@@ -520,7 +528,7 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment st
 // signed-in user's own mailbox when target is empty. As with ReplyMessage, the
 // target selects both the mailbox the original is read from and the sending
 // identity.
-func (c *Client) ForwardMessage(ctx context.Context, target, messageID, comment string, toRecipients []string) error {
+func (c *Client) ForwardMessage(ctx context.Context, target, messageID, comment string, toRecipients []string, isHTML bool) error {
 	if err := c.ensureMaySend(); err != nil {
 		return err
 	}
@@ -528,12 +536,18 @@ func (c *Client) ForwardMessage(ctx context.Context, target, messageID, comment 
 		return err
 	}
 	body := users.NewItemMessagesItemForwardPostRequestBody()
-	body.SetComment(&comment)
 	fwdR, err := makeRecipients(toRecipients)
 	if err != nil {
 		return fmt.Errorf("invalid forward recipient: %w", err)
 	}
-	body.SetToRecipients(fwdR)
+	if isHTML {
+		message := htmlMessageBody(comment)
+		message.SetToRecipients(fwdR)
+		body.SetMessage(message)
+	} else {
+		body.SetComment(&comment)
+		body.SetToRecipients(fwdR)
+	}
 
 	err = c.targetUser(target).Messages().ByMessageId(messageID).Forward().Post(ctx, body, nil)
 	if err != nil {
@@ -543,6 +557,16 @@ func (c *Client) ForwardMessage(ctx context.Context, target, messageID, comment 
 		return fmt.Errorf("forward: %w", err)
 	}
 	return nil
+}
+
+func htmlMessageBody(content string) models.Messageable {
+	message := models.NewMessage()
+	body := models.NewItemBody()
+	body.SetContent(&content)
+	html := models.HTML_BODYTYPE
+	body.SetContentType(&html)
+	message.SetBody(body)
+	return message
 }
 
 func (c *Client) MoveMessage(ctx context.Context, messageID, folderID string) (*MoveMessageReceipt, error) {

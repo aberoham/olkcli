@@ -54,7 +54,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "team@example.com",
 			want:   "/v1.0/users/team@example.com/messages/AAA/reply",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", false)
+				return c.ReplyMessage(ctx, target, "AAA", "body", false, false)
 			},
 		},
 		{
@@ -62,7 +62,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "team@example.com",
 			want:   "/v1.0/users/team@example.com/messages/AAA/replyAll",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", true)
+				return c.ReplyMessage(ctx, target, "AAA", "body", true, false)
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "",
 			want:   meBuilderPath + "/messages/AAA/reply",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", false)
+				return c.ReplyMessage(ctx, target, "AAA", "body", false, false)
 			},
 		},
 		{
@@ -78,7 +78,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "team@example.com",
 			want:   "/v1.0/users/team@example.com/messages/AAA/forward",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ForwardMessage(ctx, target, "AAA", "", []string{"person@example.com"})
+				return c.ForwardMessage(ctx, target, "AAA", "", []string{"person@example.com"}, false)
 			},
 		},
 		{
@@ -86,7 +86,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "",
 			want:   meBuilderPath + "/messages/AAA/forward",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ForwardMessage(ctx, target, "AAA", "", []string{"person@example.com"})
+				return c.ForwardMessage(ctx, target, "AAA", "", []string{"person@example.com"}, false)
 			},
 		},
 		{
@@ -94,7 +94,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "",
 			want:   meBuilderPath + "/messages/AAA/replyAll",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", true)
+				return c.ReplyMessage(ctx, target, "AAA", "body", true, false)
 			},
 		},
 		{

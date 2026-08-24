@@ -76,8 +76,10 @@ olk mail send --to a@b.com --subject "Urgent" --body "ASAP" --importance high
 olk mail send --to a@b.com --subject "Contract" --body "Please review" --read-receipt
 olk mail search "from:boss@co.com subject:urgent" [-n 25]                 # KQL
 olk mail thread <CONVERSATION_ID> [--top 50 | --complete]               # one conversation
-olk mail reply <ID> --body "Thanks" [--reply-all]
-olk mail forward <ID> --to a@b.com [--comment "FYI"]
+olk mail reply <ID> --body "Thanks" [--reply-all] [--html]
+olk mail reply <ID> --body "<p>Thanks</p>" --html
+olk mail forward <ID> --to a@b.com [--comment "FYI"] [--html]
+olk mail forward <ID> --to a@b.com --comment "<p>FYI</p>" --html
 olk mail move <ID> <FOLDER>
 olk mail delete <ID> --force
 olk mail mark <ID> --read | --unread

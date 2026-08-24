@@ -9,6 +9,7 @@ import (
 type MailReplyCmd struct {
 	ID       string `arg:"" help:"Message ID to reply to"`
 	Body     string `help:"Reply body" required:"" short:"b"`
+	HTML     bool   `help:"Reply body is HTML"`
 	ReplyAll bool   `help:"Reply to all recipients" short:"a"`
 }
 
@@ -33,7 +34,7 @@ func (c *MailReplyCmd) Run(ctx *RunContext) error {
 		return nil
 	}
 
-	if err := client.ReplyMessage(ctx.Ctx, target, c.ID, c.Body, c.ReplyAll); err != nil {
+	if err := client.ReplyMessage(ctx.Ctx, target, c.ID, c.Body, c.ReplyAll, c.HTML); err != nil {
 		return err
 	}
 
