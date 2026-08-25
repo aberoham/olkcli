@@ -339,6 +339,7 @@ olk mail list --mailbox boss@example.com
 olk mail get <ID> --mailbox boss@example.com
 olk mail search "from:partner@example.com" --mailbox boss@example.com
 olk mail folders --mailbox boss@example.com
+olk mail attachments <ID> --mailbox boss@example.com   # list; also --save / --attachment-id to download
 
 # Send as a shared mailbox (needs Mail.Send.Shared + Send As + Full Access)
 olk mail send --mailbox team@example.com --to person@example.com --subject "..." --body "..."
