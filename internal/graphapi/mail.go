@@ -751,14 +751,16 @@ type AttachmentInput struct {
 	Content     []byte
 }
 
-func (c *Client) DownloadAttachment(ctx context.Context, messageID, attachmentID string) (*Attachment, error) {
+// DownloadAttachment fetches one file attachment from the target mailbox, or
+// from the signed-in user's mailbox when target is empty.
+func (c *Client) DownloadAttachment(ctx context.Context, target, messageID, attachmentID string) (*Attachment, error) {
 	if err := validateID(messageID, "message ID"); err != nil {
 		return nil, err
 	}
 	if err := validateID(attachmentID, "attachment ID"); err != nil {
 		return nil, err
 	}
-	resp, err := c.inner.Me().Messages().ByMessageId(messageID).Attachments().ByAttachmentId(attachmentID).Get(ctx, nil)
+	resp, err := c.targetUser(target).Messages().ByMessageId(messageID).Attachments().ByAttachmentId(attachmentID).Get(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("downloading attachment: %w", err)
 	}
@@ -788,11 +790,13 @@ func (c *Client) DownloadAttachment(ctx context.Context, messageID, attachmentID
 	return att, nil
 }
 
-func (c *Client) GetAttachments(ctx context.Context, messageID string) ([]Attachment, error) {
+// GetAttachments lists attachments on a message in the target mailbox, or in
+// the signed-in user's mailbox when target is empty.
+func (c *Client) GetAttachments(ctx context.Context, target, messageID string) ([]Attachment, error) {
 	if err := validateID(messageID, "message ID"); err != nil {
 		return nil, err
 	}
-	resp, err := c.inner.Me().Messages().ByMessageId(messageID).Attachments().Get(ctx, nil)
+	resp, err := c.targetUser(target).Messages().ByMessageId(messageID).Attachments().Get(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting attachments: %w", err)
 	}
