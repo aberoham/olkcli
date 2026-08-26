@@ -86,6 +86,37 @@ run() {
   return 0
 }
 
+# run_private is run for commands whose output must not be archived. The
+# transcript is the point of this harness, but a full listing of a shared
+# mailbox is not this run's residue: it is other people's mail, and writing it
+# to disk outlives the test by as long as nobody remembers to delete it.
+# Callers still get RUN_OUTPUT to parse; the log gets a note instead.
+#
+# Projecting the payload down at the source would be better, but --concise and
+# --select are both ignored by `mail drafts list`, so the caller cannot ask for
+# less than the whole draft. Withholding it here is the remaining lever.
+run_private() {
+  log "\$ $*"
+  local out status=0
+  out="$("$@" 2>&1)" || status=$?
+  log "[output withheld from transcript: $(printf '%s' "${out}" | wc -c | tr -d ' ') bytes]"
+  # shellcheck disable=SC2034  # both are read by the sourcing stage scripts.
+  RUN_OUTPUT="${out}"
+  # shellcheck disable=SC2034
+  RUN_STATUS="${status}"
+  return 0
+}
+
+olk_as_private() {
+  local account="$1" mailbox="$2"
+  shift 2
+  if [[ -n "${mailbox}" ]]; then
+    run_private "${OLK}" --account "${account}" --mailbox "${mailbox}" "${OLK_COMMON[@]}" "$@"
+  else
+    run_private "${OLK}" --account "${account}" "${OLK_COMMON[@]}" "$@"
+  fi
+}
+
 olk_as() {
   local account="$1" mailbox="$2"
   shift 2
