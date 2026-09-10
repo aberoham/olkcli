@@ -40,6 +40,7 @@ func TestVersionJSONAdvertisesStructuredMailCapabilities(t *testing.T) {
 		"mail.move.structured-receipt-v1",
 		"mail.provider-body-format-v1",
 		"mail.thread.complete-v1",
+		"mail.attachments.inline-identity-v1",
 		"mail.shared-mailbox-send-v1",
 		"mcp.delegated-mailbox-v1",
 	}; !reflect.DeepEqual(got.Capabilities, want) {

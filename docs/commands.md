@@ -49,7 +49,7 @@ olk mail forward <ID> --to EMAIL [--comment COMMENT] [--html]
 olk mail mark <ID> read|unread
 olk mail move <ID> ID_OR_PATH
 olk mail delete <ID> --force
-olk mail attachments <ID> --attachment-id ID
+olk mail attachments <ID> [--save] [--out DIR] [--attachment-id ID]
 olk mail folders list|create|rename|delete  # list traverses visible child folders
 olk mail drafts list|create|send|delete
 olk mail drafts create --to EMAIL --subject SUBJECT --body '<img src="cid:logo">' --html --inline logo=logo.png
@@ -70,6 +70,11 @@ their immediate-send behavior.
 `mail drafts create --html`. Reference every supplied CID in the HTML as
 `cid:CID`; CIDs must be unique, files must be images, and each file must be
 under 3 MB. Immediate replies, sends, and forwards do not accept `--inline`.
+
+`mail attachments --json` includes `isInline` and `contentId`. Use the content ID
+to match an attachment to a `cid:` reference in the HTML body; attachment names
+can repeat. Missing content IDs are empty strings. Query attachments directly
+when inspecting inline images, even if the message reports `hasAttachments: false`.
 
 ## Calendar
 
