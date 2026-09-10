@@ -8,8 +8,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 section "Stage 6 — cleanup, run ${RUN_ID}"
 
-# `mail delete` and `mail move` do not read --mailbox: they are scoped to the
-# signed-in user. So the sent copies this run left in the shared mailbox cannot
+# `mail delete` does not read --mailbox: it is scoped to the signed-in user. So the sent copies this run left in the shared mailbox cannot
 # be tidied by olk at all, and have to be removed by hand in Outlook. Drafts are
 # the exception, because the draft commands do honour --mailbox.
 section "Drafts left behind in ${SHARED_MAILBOX}"

@@ -276,3 +276,27 @@ func TestGraphErrorHelpersStayUnwrappable(t *testing.T) {
 		}
 	}
 }
+
+func TestMoveMessageInMailboxAddressesDelegatedTarget(t *testing.T) {
+	var gotPath string
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		gotPath = req.URL.Path
+		return graphJSONResponse(req, `{"id":"moved-id"}`)
+	})
+
+	receipt, err := client.MoveMessageInMailbox(
+		context.Background(),
+		"team@example.com",
+		"message-id",
+		"folder-id",
+	)
+	if err != nil {
+		t.Fatalf("MoveMessageInMailbox: %v", err)
+	}
+	if gotPath != "/v1.0/users/team@example.com/messages/message-id/move" {
+		t.Errorf("request path = %q, want delegated mailbox move path", gotPath)
+	}
+	if receipt.ID != "moved-id" || receipt.SourceID != "message-id" {
+		t.Errorf("receipt = %#v", receipt)
+	}
+}

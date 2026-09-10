@@ -620,7 +620,21 @@ func htmlMessageBody(content string) models.Messageable {
 	return message
 }
 
+const moveGrantHint = "Moving messages in another mailbox needs the Mail.ReadWrite.Shared scope " +
+	"(sign in again with --scope Mail.ReadWrite.Shared) and Full Access on that mailbox in " +
+	"Exchange. The message ID and destination folder must both belong to that mailbox"
+
 func (c *Client) MoveMessage(ctx context.Context, messageID, folderID string) (*MoveMessageReceipt, error) {
+	return c.MoveMessageInMailbox(ctx, "", messageID, folderID)
+}
+
+// MoveMessageInMailbox moves a message inside the target mailbox, or inside
+// the signed-in user's own mailbox when target is empty. Message and folder IDs
+// are mailbox-scoped, so both must have been resolved from the same target.
+func (c *Client) MoveMessageInMailbox(
+	ctx context.Context,
+	target, messageID, folderID string,
+) (*MoveMessageReceipt, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -633,7 +647,7 @@ func (c *Client) MoveMessage(ctx context.Context, messageID, folderID string) (*
 	body := users.NewItemMessagesItemMovePostRequestBody()
 	body.SetDestinationId(&folderID)
 
-	moved, err := c.inner.Me().Messages().ByMessageId(messageID).Move().Post(
+	moved, err := c.targetUser(target).Messages().ByMessageId(messageID).Move().Post(
 		ctx,
 		body,
 		&users.ItemMessagesItemMoveRequestBuilderPostRequestConfiguration{
@@ -641,6 +655,9 @@ func (c *Client) MoveMessage(ctx context.Context, messageID, folderID string) (*
 		},
 	)
 	if err != nil {
+		if target != "" {
+			return nil, sharedMailboxError("moving message", target, moveGrantHint, err)
+		}
 		return nil, fmt.Errorf("move message: %w", err)
 	}
 	if moved == nil || moved.GetId() == nil || *moved.GetId() == "" {

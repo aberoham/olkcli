@@ -103,6 +103,6 @@ Three outcomes look alike in an exit status and are not alike at all:
 ## Cleanup
 
 `06-cleanup-and-report` deletes the drafts it can reach and then names what it
-cannot. `mail delete` and `mail move` are scoped to the signed-in user and
-ignore `--mailbox`, so anything filed in a shared mailbox has to be removed by
+cannot. `mail delete` is scoped to the signed-in user and
+ignores `--mailbox`, so anything filed in a shared mailbox has to be removed by
 hand. Search for the run identifier, which every subject carries.
