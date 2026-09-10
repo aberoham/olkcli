@@ -109,7 +109,7 @@ func TestMoveMessageRequiresProviderDestinationID(t *testing.T) {
 		return graphJSONResponse(req, `{}`)
 	})
 
-	receipt, err := client.MoveMessage(context.Background(), "source-id", "folder-id")
+	receipt, err := client.MoveMessage(context.Background(), "", "source-id", "folder-id")
 	if err == nil || !strings.Contains(err.Error(), "graph returned no message response") {
 		t.Fatalf("MoveMessage() error = %v, want missing-ID rejection", err)
 	}
@@ -170,6 +170,7 @@ func TestImmutableMessageIDsCoverPagingReadAndMove(t *testing.T) {
 	}
 	if _, err := client.MoveMessage(
 		context.Background(),
+		"",
 		"immutable-one",
 		"deleteditems",
 	); err != nil {

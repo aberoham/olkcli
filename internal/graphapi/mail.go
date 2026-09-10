@@ -477,11 +477,14 @@ func sharedMailboxError(action, target, hint string, err error) error {
 	return wrapGraph(err, format, action, target, message)
 }
 
-func sharedMailboxReplyDraftError(action, target string, err error) error {
+// sharedMailboxItemError wraps a failure to act on an item inside another
+// mailbox, phrased as "<action> in <target>", adding hint on a permission refusal
+// and the neutral not-found guidance on a stale or foreign ID.
+func sharedMailboxItemError(action, target, hint string, err error) error {
 	message := graphErrorMessage(err)
 	guidance := ""
 	if delegatedPermissionRefusal(err, message) {
-		guidance = replyDraftGrantHint
+		guidance = hint
 	} else if delegatedMessageNotFound(err, message) {
 		guidance = delegatedMailboxNotFoundHint
 	}
@@ -624,14 +627,10 @@ const moveGrantHint = "Moving messages in another mailbox needs the Mail.ReadWri
 	"(sign in again with --scope Mail.ReadWrite.Shared) and Full Access on that mailbox in " +
 	"Exchange. The message ID and destination folder must both belong to that mailbox"
 
-func (c *Client) MoveMessage(ctx context.Context, messageID, folderID string) (*MoveMessageReceipt, error) {
-	return c.MoveMessageInMailbox(ctx, "", messageID, folderID)
-}
-
-// MoveMessageInMailbox moves a message inside the target mailbox, or inside
-// the signed-in user's own mailbox when target is empty. Message and folder IDs
-// are mailbox-scoped, so both must have been resolved from the same target.
-func (c *Client) MoveMessageInMailbox(
+// MoveMessage moves a message inside the target mailbox, or inside the
+// signed-in user's own mailbox when target is empty. Message and folder IDs are
+// mailbox-scoped, so both must have been resolved from the same target.
+func (c *Client) MoveMessage(
 	ctx context.Context,
 	target, messageID, folderID string,
 ) (*MoveMessageReceipt, error) {
@@ -656,7 +655,7 @@ func (c *Client) MoveMessageInMailbox(
 	)
 	if err != nil {
 		if target != "" {
-			return nil, sharedMailboxError("moving message", target, moveGrantHint, err)
+			return nil, sharedMailboxItemError("moving message", target, moveGrantHint, err)
 		}
 		return nil, fmt.Errorf("move message: %w", err)
 	}

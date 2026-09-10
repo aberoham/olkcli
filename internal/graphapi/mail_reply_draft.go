@@ -300,7 +300,7 @@ func newInlineFileAttachment(attachment InlineAttachmentInput) models.FileAttach
 
 func (c *Client) replyDraftError(action, target string, err error) error {
 	if target != "" {
-		return sharedMailboxReplyDraftError(action, target, err)
+		return sharedMailboxItemError(action, target, replyDraftGrantHint, err)
 	}
 	return fmt.Errorf("%s: %w", action, err)
 }

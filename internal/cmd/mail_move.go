@@ -37,7 +37,7 @@ func (c *MailMoveCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
-	receipt, err := client.MoveMessageInMailbox(ctx.Ctx, target, c.ID, folderID)
+	receipt, err := client.MoveMessage(ctx.Ctx, target, c.ID, folderID)
 	if err != nil {
 		return err
 	}
