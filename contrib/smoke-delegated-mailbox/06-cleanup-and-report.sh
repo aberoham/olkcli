@@ -13,7 +13,7 @@ section "Stage 6 — cleanup, run ${RUN_ID}"
 # be tidied by olk at all, and have to be removed by hand in Outlook. Drafts are
 # the exception, because the draft commands do honour --mailbox.
 section "Drafts left behind in ${SHARED_MAILBOX}"
-olk_as "${SEND_ACCOUNT}" "${SHARED_MAILBOX}" mail drafts list -n 25 --json --results-only >/dev/null
+olk_as_private "${SEND_ACCOUNT}" "${SHARED_MAILBOX}" mail drafts list -n 25 --json --results-only
 
 # Collect before prompting: a `while read` fed from a pipe would take the
 # operator's keystrokes for each confirmation out of the same stream as the list.
