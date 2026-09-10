@@ -102,6 +102,24 @@ generated history so formatting does not replace the quote. It returns the
 created draft and does not send it; omit `--draft` to send the reply
 immediately.
 
+To edit an existing draft without sending it:
+
+```bash
+olk mail drafts attach <DRAFT_ID> report.pdf --mailbox shared@example.com --json
+olk mail drafts update <DRAFT_ID> --cc colleague@example.com --mailbox shared@example.com --json
+olk mail drafts update <DRAFT_ID> --bcc= --dry-run --json
+```
+
+`attach` uploads one regular file under 3 MB. `update` replaces only the supplied
+To, CC or BCC lists; omit a flag to leave that list unchanged, or pass an empty
+string to clear it. The body, subject and reply history are left unchanged.
+Both commands honour `--mailbox`, `--no-write`, `--no-send`, `--dry-run`, `--json`
+and `--plain`. They check that the message is a draft before editing. Shared
+mailbox edits need `Mail.ReadWrite.Shared` and Full Access. JSON receipts include
+`id`, `mailbox` (empty for the signed-in user), and `dryRun`, plus `attachment`
+or `recipients`. In recipient receipts, null means unchanged and [] means clear.
+The new commands are CLI-only; the MCP tool allowlist is unchanged.
+
 For inline images, reference each image in the HTML as `cid:CID`, then supply
 the matching local file with a repeatable `--inline CID=PATH` flag. CIDs must be
 unique, files must be images, and each must be under 3 MB. This works on

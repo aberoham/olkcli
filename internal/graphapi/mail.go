@@ -429,6 +429,7 @@ func (c *Client) SendMessage(ctx context.Context, target string, opts *SendMessa
 // https://learn.microsoft.com/en-us/graph/outlook-send-mail-from-other-user
 const (
 	errorSendAsDeniedCode = "ErrorSendAsDenied"
+	errorAccessDeniedCode = "ErrorAccessDenied"
 
 	sendGrantHint = "Sending as another mailbox needs three separate grants: the Mail.Send.Shared " +
 		"scope (sign in again with --scope Mail.Send.Shared), Send As or Send on Behalf Of on that " +
@@ -515,7 +516,7 @@ func sharedMailboxReadError(action, target string, err error) error {
 func delegatedPermissionRefusal(err error, message string) bool {
 	code, status := ErrorMetadata(err)
 	lower := strings.ToLower(message)
-	return code == errorSendAsDeniedCode || code == "ErrorAccessDenied" ||
+	return code == errorSendAsDeniedCode || code == errorAccessDeniedCode ||
 		strings.Contains(lower, "access is denied") ||
 		strings.Contains(lower, "forbidden") ||
 		(status == 403 && strings.Contains(lower, "denied"))

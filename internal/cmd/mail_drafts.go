@@ -16,6 +16,8 @@ type MailDraftsCmd struct {
 	Create MailDraftsCreateCmd `cmd:"" help:"Create a draft message"`
 	Send   MailDraftsSendCmd   `cmd:"" help:"Send a draft message"`
 	Delete MailDraftsDeleteCmd `cmd:"" help:"Delete a draft message"`
+	Attach MailDraftsAttachCmd `cmd:"" help:"Attach a file to an existing draft"`
+	Update MailDraftsUpdateCmd `cmd:"" help:"Replace the recipients of an existing draft"`
 }
 
 // MailDraftsListCmd lists draft messages
