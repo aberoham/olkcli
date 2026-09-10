@@ -325,3 +325,54 @@ func TestMoveMessageInSharedMailboxExplainsRefusal(t *testing.T) {
 		t.Errorf("ErrorMetadata = (%q, %d), want (%q, 403)", gotCode, status, code)
 	}
 }
+
+func TestDeleteMessageAddressesTheRequestedMailbox(t *testing.T) {
+	for _, tc := range []struct {
+		target   string
+		wantPath string
+	}{
+		// The SDK emits Me() as a placeholder user segment that its own middleware
+		// rewrites to /me, so the raw path is what the test transport sees.
+		{"", "/v1.0/users/me-token-to-replace/messages/message-id"},
+		{"team@example.com", "/v1.0/users/team@example.com/messages/message-id"},
+	} {
+		t.Run("target="+tc.target, func(t *testing.T) {
+			var gotPath, gotMethod string
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				gotPath, gotMethod = req.URL.Path, req.Method
+				return graphEmptyResponse(req)
+			})
+			if err := client.DeleteMessage(context.Background(), tc.target, "message-id"); err != nil {
+				t.Fatalf("DeleteMessage: %v", err)
+			}
+			if gotMethod != http.MethodDelete || gotPath != tc.wantPath {
+				t.Errorf("request = %s %q, want DELETE %q", gotMethod, gotPath, tc.wantPath)
+			}
+		})
+	}
+}
+
+// A refused delegated delete names the grants that deleting needs, and none of
+// the sending grants, which are irrelevant to it.
+func TestDeleteMessageInSharedMailboxExplainsRefusal(t *testing.T) {
+	code, message := "ErrorAccessDenied", "Access is denied. Check credentials and try again."
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		return replyDraftErrorResponse(req, http.StatusForbidden, code, message)
+	})
+	err := client.DeleteMessage(context.Background(), "team@example.com", "message-id")
+	if err == nil {
+		t.Fatal("DeleteMessage: want an error")
+	}
+	text := err.Error()
+	for _, want := range []string{"deleting message in team@example.com", "Mail.ReadWrite.Shared", "Full Access"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("error %q lacks %q", text, want)
+		}
+	}
+	if strings.Contains(text, "Send As or Send on Behalf Of on that") {
+		t.Errorf("error %q carries sending guidance", text)
+	}
+	if gotCode, status := ErrorMetadata(err); gotCode != code || status != http.StatusForbidden {
+		t.Errorf("ErrorMetadata = (%q, %d), want (%q, 403)", gotCode, status, code)
+	}
+}
