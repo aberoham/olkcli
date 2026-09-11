@@ -14,6 +14,10 @@ section "Stage 6 — cleanup, run ${RUN_ID}"
 # the exception, because the draft commands do honour --mailbox.
 section "Drafts left behind in ${SHARED_MAILBOX}"
 olk_as_private "${SEND_ACCOUNT}" "${SHARED_MAILBOX}" mail drafts list -n 25 --json --results-only
+if [[ "${RUN_STATUS}" -ne 0 ]]; then
+  log "FATAL: draft listing failed (exit ${RUN_STATUS}); private command output was withheld from the transcript."
+  exit 1
+fi
 
 # Collect before prompting: a `while read` fed from a pipe would take the
 # operator's keystrokes for each confirmation out of the same stream as the list.
