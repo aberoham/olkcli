@@ -51,3 +51,7 @@ npm/olk-*/bin/olk.exe
 # Live smoke-test configuration and run output (real mailbox addresses)
 contrib/smoke-delegated-mailbox/config.sh
 contrib/smoke-delegated-mailbox/results/
+
+# Scratch space for local runs against real mailboxes. Never committed: it
+# accumulates message bodies, addresses and downloaded attachments verbatim.
+/tmp/
