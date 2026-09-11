@@ -13,23 +13,31 @@ type MailMoveCmd struct {
 }
 
 func (c *MailMoveCmd) Run(ctx *RunContext) error {
-	client, err := ctx.GraphClient()
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would move message %s to folder %s\n", outfmt.Sanitize(c.ID), outfmt.Sanitize(c.Folder))
+		if target == "" {
+			fmt.Printf("Would move message %s to folder %s\n", outfmt.Sanitize(c.ID), outfmt.Sanitize(c.Folder))
+		} else {
+			fmt.Printf("Would move message %s in %s to folder %s\n", outfmt.Sanitize(c.ID),
+				describeMailbox(target), outfmt.Sanitize(c.Folder))
+		}
 		return nil
 	}
 
-	// MoveMessage is intentionally an own-mailbox operation, so resolve a path
-	// against that same mailbox rather than the global delegated read target.
-	folderID, err := client.ResolveMailFolderPath(ctx.Ctx, "", c.Folder)
+	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
-	receipt, err := client.MoveMessage(ctx.Ctx, c.ID, folderID)
+
+	folderID, err := client.ResolveMailFolderPath(ctx.Ctx, target, c.Folder)
+	if err != nil {
+		return err
+	}
+	receipt, err := client.MoveMessage(ctx.Ctx, target, c.ID, folderID)
 	if err != nil {
 		return err
 	}
@@ -37,6 +45,10 @@ func (c *MailMoveCmd) Run(ctx *RunContext) error {
 	if ctx.Flags.JSON {
 		return ctx.Printer().PrintJSON([]*graphapi.MoveMessageReceipt{receipt}, 1, "")
 	}
-	fmt.Printf("Message moved to %s.\n", outfmt.Sanitize(c.Folder))
+	if target == "" {
+		fmt.Printf("Message moved to %s.\n", outfmt.Sanitize(c.Folder))
+	} else {
+		fmt.Printf("Message moved in %s to %s.\n", describeMailbox(target), outfmt.Sanitize(c.Folder))
+	}
 	return nil
 }

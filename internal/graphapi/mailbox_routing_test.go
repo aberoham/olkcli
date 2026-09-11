@@ -276,3 +276,52 @@ func TestGraphErrorHelpersStayUnwrappable(t *testing.T) {
 		}
 	}
 }
+
+func TestMoveMessageAddressesDelegatedTarget(t *testing.T) {
+	var gotPath string
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		gotPath = req.URL.Path
+		return graphJSONResponse(req, `{"id":"moved-id"}`)
+	})
+
+	receipt, err := client.MoveMessage(
+		context.Background(),
+		"team@example.com",
+		"message-id",
+		"folder-id",
+	)
+	if err != nil {
+		t.Fatalf("MoveMessage: %v", err)
+	}
+	if gotPath != "/v1.0/users/team@example.com/messages/message-id/move" {
+		t.Errorf("request path = %q, want delegated mailbox move path", gotPath)
+	}
+	if receipt.ID != "moved-id" || receipt.SourceID != "message-id" {
+		t.Errorf("receipt = %#v", receipt)
+	}
+}
+
+// A refused delegated move is phrased as acting in the mailbox, not as it, and
+// carries the move grants rather than the sending ones.
+func TestMoveMessageInSharedMailboxExplainsRefusal(t *testing.T) {
+	code, message := "ErrorAccessDenied", "Access is denied. Check credentials and try again."
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		return replyDraftErrorResponse(req, http.StatusForbidden, code, message)
+	})
+	_, err := client.MoveMessage(context.Background(), "team@example.com", "message-id", "folder-id")
+	if err == nil {
+		t.Fatal("MoveMessage: want an error")
+	}
+	text := err.Error()
+	for _, want := range []string{"moving message in team@example.com", "Mail.ReadWrite.Shared", "Full Access"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("error %q lacks %q", text, want)
+		}
+	}
+	if strings.Contains(text, "Mail.Send.Shared") {
+		t.Errorf("error %q carries sending guidance", text)
+	}
+	if gotCode, status := ErrorMetadata(err); gotCode != code || status != http.StatusForbidden {
+		t.Errorf("ErrorMetadata = (%q, %d), want (%q, 403)", gotCode, status, code)
+	}
+}

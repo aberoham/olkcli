@@ -76,9 +76,11 @@ from that mailbox before sending as it. Reply-draft creation reads the same
 mailbox-scoped original without sending. In every case, the message ID must be
 one listed from that mailbox; one taken from your own mailbox will not resolve.
 
-Calendar writes, contact writes, folder writes, and the commands that organise
-mail in place — move, flag, categorise, mark — remain scoped to the signed-in
-user; they do not read `--mailbox`.
+`mail move` honours `--mailbox`; moving a shared-mailbox message needs
+`Mail.ReadWrite.Shared` and Full Access, and the message and destination folder
+must both belong to that mailbox. Calendar writes, contact writes, folder
+writes, and the other commands that organise mail in place — flag, categorise,
+mark — remain scoped to the signed-in user; they do not read `--mailbox`.
 
 ## macOS Keychain
 
