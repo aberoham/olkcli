@@ -51,7 +51,7 @@ olk mail move <ID> ID_OR_PATH
 olk mail delete <ID> --force
 olk mail attachments <ID> [--save] [--out DIR] [--attachment-id ID]
 olk mail folders list|create|rename|delete  # list traverses visible child folders
-olk mail drafts list|create|send|delete
+olk mail drafts list|create|send|delete|attach|update
 olk mail drafts create --to EMAIL --subject SUBJECT --body '<img src="cid:logo">' --html --inline logo=logo.png
 olk mail flag <ID> flagged|complete|notFlagged
 olk mail categorize <ID> --category NAME
@@ -59,6 +59,24 @@ olk mail importance <ID> low|normal|high
 olk mail ooo get|set|off
 olk mail rules list|create|delete
 ```
+
+To edit an existing draft without sending it:
+
+```bash
+olk mail drafts attach <DRAFT_ID> report.pdf --mailbox shared@example.com --json
+olk mail drafts update <DRAFT_ID> --cc colleague@example.com --mailbox shared@example.com --json
+olk mail drafts update <DRAFT_ID> --bcc= --dry-run --json
+```
+
+`attach` uploads one regular file under 3 MB. `update` replaces only the supplied
+To, CC or BCC lists; omit a flag to leave that list unchanged, or pass an empty
+string to clear it. The body, subject and reply history are left unchanged.
+Both commands honour `--mailbox`, `--no-write`, `--no-send`, `--dry-run`, `--json`
+and `--plain`. They check that the message is a draft before editing. Shared
+mailbox edits need `Mail.ReadWrite.Shared` and Full Access. JSON receipts include
+`id`, `mailbox` (empty for the signed-in user), and `dryRun`, plus `attachment`
+or `recipients`. In recipient receipts, null means unchanged and [] means clear.
+The new commands are CLI-only; the MCP tool allowlist is unchanged.
 
 `mail reply --draft` creates a true threaded Outlook reply or reply-all draft,
 including Outlook's quoted history, and returns its draft ID and subject. For
