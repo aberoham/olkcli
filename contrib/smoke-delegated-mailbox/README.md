@@ -106,3 +106,8 @@ Three outcomes look alike in an exit status and are not alike at all:
 messages. It removes drafts only; sent copies are yours to remove, either with
 `mail delete --mailbox`, which acts on the shared mailbox, or by
 hand. Search for the run identifier, which every subject carries.
+
+Run `bash contrib/smoke-delegated-mailbox/test-private-output.sh` from the
+repository root for the offline transcript-privacy regression. It uses fake
+output and does not contact Microsoft Graph. Cleanup keeps the draft listing
+in memory for filtering but excludes its payload from the transcript.

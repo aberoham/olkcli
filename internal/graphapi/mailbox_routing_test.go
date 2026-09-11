@@ -331,8 +331,6 @@ func TestDeleteMessageAddressesTheRequestedMailbox(t *testing.T) {
 		target   string
 		wantPath string
 	}{
-		// The SDK emits Me() as a placeholder user segment that its own middleware
-		// rewrites to /me, so the raw path is what the test transport sees.
 		{"", "/v1.0/users/me-token-to-replace/messages/message-id"},
 		{"team@example.com", "/v1.0/users/team@example.com/messages/message-id"},
 	} {
@@ -352,8 +350,6 @@ func TestDeleteMessageAddressesTheRequestedMailbox(t *testing.T) {
 	}
 }
 
-// A refused delegated delete names the grants that deleting needs, and none of
-// the sending grants, which are irrelevant to it.
 func TestDeleteMessageInSharedMailboxExplainsRefusal(t *testing.T) {
 	code, message := "ErrorAccessDenied", "Access is denied. Check credentials and try again."
 	client := testGraphClient(t, func(req *http.Request) *http.Response {

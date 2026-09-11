@@ -86,6 +86,30 @@ run() {
   return 0
 }
 
+# Capture private command output for callers without writing it to the transcript.
+# RUN_STATUS retains the exit code, just as it does for run.
+run_private() {
+  log "\$ $*"
+  local out status=0
+  out="$("$@" 2>&1)" || status=$?
+  log "[output withheld from transcript: $(printf '%s' "${out}" | wc -c | tr -d ' ') bytes]"
+  # shellcheck disable=SC2034  # both are read by the sourcing stage scripts.
+  RUN_OUTPUT="${out}"
+  # shellcheck disable=SC2034
+  RUN_STATUS="${status}"
+  return 0
+}
+
+olk_as_private() {
+  local account="$1" mailbox="$2"
+  shift 2
+  if [[ -n "${mailbox}" ]]; then
+    run_private "${OLK}" --account "${account}" --mailbox "${mailbox}" "${OLK_COMMON[@]}" "$@"
+  else
+    run_private "${OLK}" --account "${account}" "${OLK_COMMON[@]}" "$@"
+  fi
+}
+
 olk_as() {
   local account="$1" mailbox="$2"
   shift 2

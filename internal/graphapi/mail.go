@@ -817,12 +817,25 @@ func (c *Client) SearchMessages(ctx context.Context, target, query string, top i
 	})
 }
 
+// attachmentContentID returns the MIME Content-ID that an inline image is
+// referenced by from the HTML body (src="cid:..."). Graph exposes it only on
+// fileAttachment, not on the attachment base type, so the cast is required.
+func attachmentContentID(a models.Attachmentable) string {
+	fileAtt, ok := a.(models.FileAttachmentable)
+	if !ok {
+		return ""
+	}
+	return derefStr(fileAtt.GetContentId())
+}
+
 // Attachment represents a mail attachment
 type Attachment struct {
 	ID          string `json:"id"`
 	Name        string `json:"name" untrusted:"true"`
 	ContentType string `json:"contentType"`
 	Size        int32  `json:"size"`
+	IsInline    bool   `json:"isInline"`
+	ContentID   string `json:"contentId"`
 	Content     []byte `json:"-"`
 }
 
@@ -850,6 +863,8 @@ func (c *Client) DownloadAttachment(ctx context.Context, target, messageID, atta
 	att := &Attachment{
 		Name:        derefStr(resp.GetName()),
 		ContentType: derefStr(resp.GetContentType()),
+		IsInline:    resp.GetIsInline() != nil && *resp.GetIsInline(),
+		ContentID:   attachmentContentID(resp),
 	}
 	if resp.GetId() != nil {
 		att.ID = *resp.GetId()
@@ -888,6 +903,8 @@ func (c *Client) GetAttachments(ctx context.Context, target, messageID string) (
 		att := Attachment{
 			Name:        derefStr(a.GetName()),
 			ContentType: derefStr(a.GetContentType()),
+			IsInline:    a.GetIsInline() != nil && *a.GetIsInline(),
+			ContentID:   attachmentContentID(a),
 		}
 		if a.GetId() != nil {
 			att.ID = *a.GetId()
