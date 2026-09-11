@@ -108,6 +108,10 @@ unique, files must be images, and each must be under 3 MB. This works on
 `mail reply --html --draft` and `mail drafts create --html`; it is not available
 on immediate replies, sends, or forwards.
 
+Attachment JSON includes `isInline` and `contentId` for matching inline images
+to HTML `cid:` references. Query attachments directly when inspecting inline
+images, even when `hasAttachments` is false.
+
 For a bounded mail inventory, use:
 
 ```bash
