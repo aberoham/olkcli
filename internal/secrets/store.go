@@ -121,12 +121,35 @@ func NewKeyringStore() (*KeyringStore, error) {
 	return &KeyringStore{ring: ring}, nil
 }
 
-// Set stores a value under the given key.
+// Set stores a value under the given key. The item carries a label and a
+// description because macOS shows the label in its access prompt: without
+// one the dialog reads `olk wants to access key "" in your keychain`, which
+// gives the person no way to tell which account or purpose is being asked
+// about.
+//
+// On macOS the name in that prompt is the item's access-control entry,
+// which the keychain creates from the label when the item is first added
+// and never changes on update, so the name only reaches items created after
+// this label existed. Recreating an older item is not an option: the
+// keychain lets only the application that created an item delete it, and a
+// rebuilt or re-signed binary is a different application (error -25244).
+// Signing out and back in recreates the item with the name.
 func (s *KeyringStore) Set(key, value string) error {
 	return s.ring.Set(keyring.Item{
-		Key:  key,
-		Data: []byte(value),
+		Key:         key,
+		Data:        []byte(value),
+		Label:       ItemLabel(key),
+		Description: "olk Microsoft 365 credential",
 	})
+}
+
+// ItemLabel is the human-readable name a stored key gets in the OS
+// credential store, e.g. "olk token for someone@example.com".
+func ItemLabel(key string) string {
+	if IsTokenKey(key) {
+		return "olk token for " + strings.TrimPrefix(key, tokenPrefix)
+	}
+	return "olk " + key
 }
 
 // Get retrieves the value stored under the given key.
