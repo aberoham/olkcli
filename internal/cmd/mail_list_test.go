@@ -20,6 +20,37 @@ import (
 	"github.com/rlrghb/olkcli/internal/graphapi"
 )
 
+func TestMailListDefaultsToTheInboxFolder(t *testing.T) {
+	// A bare `mail list` must read the Inbox, not /messages, which spans
+	// every folder in the mailbox. On 14 September 2026 a shared mailbox
+	// whose Inbox held one message listed forty filed and deleted threads
+	// and was read as never having been cleared.
+	_, calls, err := runMailCommand(t, []string{"mail", "list"}, []string{"--json"}, func(req *http.Request) *http.Response {
+		if req.URL.Path != "/v1.0/me/mailFolders/inbox/messages" {
+			t.Fatalf("mail list path = %s, want the Inbox folder", req.URL.Path)
+		}
+		return graphMessageListResponse(req)
+	})
+	if err != nil {
+		t.Fatalf("mail list: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("Graph requests = %d, want 1", calls)
+	}
+}
+
+func TestMailListHonoursAnExplicitFolder(t *testing.T) {
+	_, _, err := runMailCommand(t, []string{"mail", "list"}, []string{"--json", "--folder", "sentitems"}, func(req *http.Request) *http.Response {
+		if req.URL.Path != "/v1.0/me/mailFolders/sentitems/messages" {
+			t.Fatalf("mail list path = %s, want the Sent Items folder", req.URL.Path)
+		}
+		return graphMessageListResponse(req)
+	})
+	if err != nil {
+		t.Fatalf("mail list --folder sentitems: %v", err)
+	}
+}
+
 func TestMailListDefaultsToNewestOrder(t *testing.T) {
 	query, _ := runMailList(t, "--json")
 	if got := query.Get("$orderby"); got != "receivedDateTime desc" {

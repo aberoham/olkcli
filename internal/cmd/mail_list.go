@@ -8,8 +8,13 @@ import (
 	"github.com/rlrghb/olkcli/internal/outfmt"
 )
 
+// MailListCmd lists one folder, the Inbox unless --folder names another. An
+// empty folder used to fall through to /messages, which spans every folder in
+// the mailbox, so a bare `mail list` on a busy shared mailbox showed mail that
+// had already been filed, deleted or sent and read as an Inbox that was
+// never cleared. Listing across folders is what `mail search` is for.
 type MailListCmd struct {
-	Folder  string  `help:"Mail folder ID, well-known name, or path (for example Inbox/2026)" short:"f" env:"OLK_MAIL_FOLDER"`
+	Folder  string  `help:"Mail folder ID, well-known name, or path (for example Inbox/2026)" short:"f" env:"OLK_MAIL_FOLDER" default:"inbox"`
 	Top     int32   `help:"Number of messages to return" default:"25" short:"n"`
 	Unread  bool    `help:"Show only unread messages" short:"u"`
 	From    string  `help:"Filter by sender email"`
