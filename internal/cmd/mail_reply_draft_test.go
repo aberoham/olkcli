@@ -451,6 +451,110 @@ func TestMailReplyDraftCommandUsesTheMailboxTimeZoneByDefault(t *testing.T) {
 	}
 }
 
+func TestMailReplyDraftCommandFallsBackToTheSignedInUsersTimeZoneForADelegatedMailbox(t *testing.T) {
+	// Mail.Read.Shared never covers another mailbox's settings, so Graph
+	// refuses /users/{mailbox}/mailboxSettings for every shared mailbox. The
+	// draft must still be produced, quoting the Sent line in the signed-in
+	// user's own zone, which is what Outlook on the web shows for a shared
+	// mailbox. Seen live on 14 September 2026 against a delegated expenses
+	// mailbox with full Exchange access.
+	generated := `<html><body><div id="divRplyFwdMsg"><b>Sent:</b> Monday, 14 September 2026 07:45:15<br></div></body></html>`
+	wantCombined := `<html><body><p>Thanks</p><div id="divRplyFwdMsg"><b>Sent:</b> 14 September 2026 08:45<br></div></body></html>`
+	call := 0
+
+	_, calls, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "<p>Thanks</p>", "--html", "--draft", "--mailbox", "team@example.com",
+	}, func(req *http.Request) *http.Response {
+		call++
+		switch call {
+		case 1:
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","body":{"contentType":"html","content":`+mustJSONQuote(t, generated)+`}}`)
+		case 2:
+			if req.Method != http.MethodGet || req.URL.Path != "/v1.0/users/team@example.com/mailboxSettings" {
+				t.Fatalf("delegated settings read = %s %s", req.Method, req.URL.Path)
+			}
+			resp := graphJSONResponse(req, `{"error":{"code":"ErrorAccessDenied","message":"Access is denied. Check credentials and try again."}}`)
+			resp.StatusCode = http.StatusForbidden
+			return resp
+		case 3:
+			if req.Method != http.MethodGet || req.URL.Path != "/v1.0/me/mailboxSettings" {
+				t.Fatalf("fallback settings read = %s %s, want the signed-in user's own settings", req.Method, req.URL.Path)
+			}
+			if got := req.URL.Query().Get("$select"); got != "timeZone" {
+				t.Fatalf("fallback settings $select = %q, want timeZone", got)
+			}
+			return graphJSONResponse(req, `{"timeZone":"GMT Standard Time"}`)
+		case 4:
+			if req.Method != http.MethodGet || req.URL.Path != "/v1.0/users/team@example.com/messages/AAA" {
+				t.Fatalf("original read = %s %s", req.Method, req.URL.Path)
+			}
+			return graphJSONResponse(req, `{"id":"AAA","sentDateTime":"2026-09-14T07:45:15Z"}`)
+		case 5:
+			if req.Method != http.MethodPatch {
+				t.Fatalf("expected the body patch, got %s %s", req.Method, req.URL.Path)
+			}
+			var payload struct {
+				Body struct {
+					Content string `json:"content"`
+				} `json:"body"`
+			}
+			if err := decodeGraphJSON(req.Body, &payload); err != nil {
+				t.Fatalf("decode patch: %v", err)
+			}
+			if payload.Body.Content != wantCombined {
+				t.Fatalf("patch body\n%s\nwant\n%s", payload.Body.Content, wantCombined)
+			}
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+		default:
+			t.Fatalf("unexpected Graph request %d: %s %s", call, req.Method, req.URL.Path)
+			return graphJSONResponse(req, `{}`)
+		}
+	})
+	if err != nil {
+		t.Fatalf("mail reply --html --draft --mailbox: %v", err)
+	}
+	if calls != 5 {
+		t.Fatalf("Graph requests = %d, want 5", calls)
+	}
+}
+
+func TestMailReplyDraftCommandFailsClearlyWhenBothTimeZoneReadsAreRefusedForADelegatedMailbox(t *testing.T) {
+	generated := `<html><body><div id="divRplyFwdMsg"><b>Sent:</b> Monday, 14 September 2026 07:45:15<br></div></body></html>`
+	call := 0
+	_, _, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "<p>Thanks</p>", "--html", "--draft", "--mailbox", "team@example.com",
+	}, func(req *http.Request) *http.Response {
+		call++
+		switch call {
+		case 1:
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","body":{"contentType":"html","content":`+mustJSONQuote(t, generated)+`}}`)
+		case 2, 3:
+			if req.Method != http.MethodGet || !strings.HasSuffix(req.URL.Path, "/mailboxSettings") {
+				t.Fatalf("settings read %d = %s %s", call, req.Method, req.URL.Path)
+			}
+			resp := graphJSONResponse(req, `{"error":{"code":"ErrorAccessDenied","message":"Access is denied."}}`)
+			resp.StatusCode = http.StatusForbidden
+			return resp
+		case 4:
+			if req.Method != http.MethodDelete {
+				t.Fatalf("expected the failed draft to be cleaned up, got %s %s", req.Method, req.URL.Path)
+			}
+			resp := graphJSONResponse(req, ``)
+			resp.StatusCode = http.StatusNoContent
+			return resp
+		default:
+			t.Fatalf("unexpected Graph request %d: %s %s", call, req.Method, req.URL.Path)
+			return graphJSONResponse(req, `{}`)
+		}
+	})
+	if err == nil {
+		t.Fatal("expected an error when neither time zone can be read")
+	}
+	if !strings.Contains(err.Error(), "--tz") {
+		t.Fatalf("error does not point at --tz: %v", err)
+	}
+}
+
 func TestMailReplyDraftCommandFailsClearlyWhenTheMailboxTimeZoneIsUnreadable(t *testing.T) {
 	generated := `<html><body><div id="divRplyFwdMsg"><b>Sent:</b> Monday, 14 September 2026 07:45:15<br></div></body></html>`
 	call := 0

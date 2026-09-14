@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/microsoftgraph/msgraph-sdk-go/models"
 	"github.com/microsoftgraph/msgraph-sdk-go/users"
 )
 
@@ -102,10 +103,18 @@ func (c *Client) quotedSentTime(ctx context.Context, target, messageID string, l
 // mailboxTimeZone reads the mailbox's configured time zone and resolves it
 // to a location. Exchange stores Windows zone names such as "GMT Standard
 // Time", so the value goes through the CLDR mapping in windowsTimeZones.
+//
+// A delegated mailbox's settings are not readable under Mail.Read.Shared:
+// MailboxSettings.Read covers the signed-in user alone, so Graph answers 403
+// for every shared mailbox however complete the Exchange delegation is. That
+// refusal is the normal case rather than a misconfiguration, and Outlook on
+// the web renders a shared mailbox in the signed-in user's own zone, so the
+// read falls back to /me/mailboxSettings before giving up.
 func (c *Client) mailboxTimeZone(ctx context.Context, target string) (*time.Location, error) {
-	resp, err := c.targetUser(target).MailboxSettings().Get(ctx, &users.ItemMailboxSettingsRequestBuilderGetRequestConfiguration{
-		QueryParameters: &users.ItemMailboxSettingsRequestBuilderGetQueryParameters{Select: []string{"timeZone"}},
-	})
+	resp, err := c.readMailboxTimeZone(ctx, target)
+	if err != nil && target != "" && delegatedPermissionRefusal(err, graphErrorMessage(err)) {
+		resp, err = c.readMailboxTimeZone(ctx, "")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reading the mailbox time zone for the quoted Sent line (%s): %w", mailboxTimeZoneHint, err)
 	}
@@ -114,6 +123,14 @@ func (c *Client) mailboxTimeZone(ctx context.Context, target string) (*time.Loca
 		zone = derefStr(resp.GetTimeZone())
 	}
 	return locationForWindowsTimeZone(zone)
+}
+
+// readMailboxTimeZone fetches only the timeZone setting of one mailbox, the
+// signed-in user's when target is empty.
+func (c *Client) readMailboxTimeZone(ctx context.Context, target string) (models.MailboxSettingsable, error) {
+	return c.targetUser(target).MailboxSettings().Get(ctx, &users.ItemMailboxSettingsRequestBuilderGetRequestConfiguration{
+		QueryParameters: &users.ItemMailboxSettingsRequestBuilderGetQueryParameters{Select: []string{"timeZone"}},
+	})
 }
 
 // locationForWindowsTimeZone resolves a Windows zone name through the CLDR
