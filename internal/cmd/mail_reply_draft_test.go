@@ -310,3 +310,231 @@ func mustJSONQuote(t *testing.T, value string) string {
 	}
 	return string(encoded)
 }
+
+func TestMailReplyDraftCommandMatchesOutlookWebSubjectAndQuotedSentLine(t *testing.T) {
+	generated := `<html><body><hr><div id="divRplyFwdMsg" dir="ltr"><font><b>From:</b> Maria<br>` +
+		`<b>Sent:</b> Monday, 14 September 2026 07:45:15<br><b>To:</b> Abe</font></div></body></html>`
+	wantCombined := `<html><body><p>Thanks</p><hr><div id="divRplyFwdMsg" dir="ltr"><font><b>From:</b> Maria<br>` +
+		`<b>Sent:</b> 14 September 2026 08:45<br><b>To:</b> Abe</font></div></body></html>`
+	call := 0
+
+	output, calls, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "<p>Thanks</p>", "--html", "--draft", "--tz", "Europe/London",
+	}, func(req *http.Request) *http.Response {
+		call++
+		switch call {
+		case 1:
+			if req.Method != http.MethodPost || req.URL.Path != "/v1.0/me/messages/AAA/createReply" {
+				t.Fatalf("create request = %s %s", req.Method, req.URL.Path)
+			}
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","body":{"contentType":"html","content":`+mustJSONQuote(t, generated)+`}}`)
+		case 2:
+			if req.Method != http.MethodGet || req.URL.Path != "/v1.0/me/messages/AAA" {
+				t.Fatalf("original read = %s %s", req.Method, req.URL.Path)
+			}
+			if got := req.URL.Query().Get("$select"); got != "sentDateTime" {
+				t.Fatalf("original read $select = %q, want sentDateTime", got)
+			}
+			return graphJSONResponse(req, `{"id":"AAA","sentDateTime":"2026-09-14T07:45:15Z"}`)
+		case 3:
+			if req.Method != http.MethodPatch || req.URL.Path != "/v1.0/me/messages/draft-id" {
+				t.Fatalf("patch request = %s %s", req.Method, req.URL.Path)
+			}
+			var payload struct {
+				Subject string `json:"subject"`
+				Body    struct {
+					Content string `json:"content"`
+				} `json:"body"`
+			}
+			if err := decodeGraphJSON(req.Body, &payload); err != nil {
+				t.Fatalf("decode patch: %v", err)
+			}
+			if payload.Subject != "Re: Original subject" {
+				t.Fatalf("patched subject = %q, want web-client prefix", payload.Subject)
+			}
+			if payload.Body.Content != wantCombined {
+				t.Fatalf("patched body =\n%s\nwant\n%s", payload.Body.Content, wantCombined)
+			}
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+		default:
+			t.Fatalf("unexpected Graph request %d: %s %s", call, req.Method, req.URL.Path)
+			return graphJSONResponse(req, `{}`)
+		}
+	})
+	if err != nil {
+		t.Fatalf("mail reply --html --draft: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("Graph requests = %d, want 3", calls)
+	}
+	wantOutput := "Reply draft created in your own mailbox: Re: Original subject (ID: draft-id)\n"
+	if output != wantOutput {
+		t.Fatalf("output = %q, want %q", output, wantOutput)
+	}
+}
+
+func TestMailReplyDraftCommandJSONOutputsTheDraft(t *testing.T) {
+	output, _, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "Thanks", "--draft", "--json",
+	}, func(req *http.Request) *http.Response {
+		return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+	})
+	if err != nil {
+		t.Fatalf("mail reply --draft --json: %v", err)
+	}
+	var envelope struct {
+		Results struct {
+			ID      string `json:"id"`
+			Subject string `json:"subject"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, output)
+	}
+	if envelope.Results.ID != "draft-id" || envelope.Results.Subject != "Re: Original subject" {
+		t.Fatalf("JSON draft = %#v", envelope.Results)
+	}
+}
+
+func TestMailReplyDraftCommandUsesTheMailboxTimeZoneByDefault(t *testing.T) {
+	generated := `<html><body><div id="divRplyFwdMsg"><b>Sent:</b> Monday, 14 September 2026 07:45:15<br></div></body></html>`
+	wantCombined := `<html><body><p>Thanks</p><div id="divRplyFwdMsg"><b>Sent:</b> 14 September 2026 08:45<br></div></body></html>`
+	call := 0
+
+	_, calls, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "<p>Thanks</p>", "--html", "--draft", "--mailbox", "team@example.com",
+	}, func(req *http.Request) *http.Response {
+		call++
+		switch call {
+		case 1:
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","body":{"contentType":"html","content":`+mustJSONQuote(t, generated)+`}}`)
+		case 2:
+			if req.Method != http.MethodGet || req.URL.Path != "/v1.0/users/team@example.com/mailboxSettings" {
+				t.Fatalf("mailbox settings read = %s %s", req.Method, req.URL.Path)
+			}
+			if got := req.URL.Query().Get("$select"); got != "timeZone" {
+				t.Fatalf("mailbox settings $select = %q, want timeZone", got)
+			}
+			return graphJSONResponse(req, `{"timeZone":"GMT Standard Time"}`)
+		case 3:
+			if req.Method != http.MethodGet || req.URL.Path != "/v1.0/users/team@example.com/messages/AAA" {
+				t.Fatalf("original read = %s %s", req.Method, req.URL.Path)
+			}
+			if got := req.Header.Get("Prefer"); strings.Contains(got, "outlook.timezone") {
+				t.Fatalf("original read asked Graph to render the zone (%q); Graph ignores it for messages", got)
+			}
+			return graphJSONResponse(req, `{"id":"AAA","sentDateTime":"2026-09-14T07:45:15Z"}`)
+		case 4:
+			var payload struct {
+				Subject string `json:"subject"`
+				Body    struct {
+					Content string `json:"content"`
+				} `json:"body"`
+			}
+			if err := decodeGraphJSON(req.Body, &payload); err != nil {
+				t.Fatalf("decode patch: %v", err)
+			}
+			if payload.Subject != "Re: Original subject" || payload.Body.Content != wantCombined {
+				t.Fatalf("patch = %q\n%s\nwant\n%s", payload.Subject, payload.Body.Content, wantCombined)
+			}
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+		default:
+			t.Fatalf("unexpected Graph request %d: %s %s", call, req.Method, req.URL.Path)
+			return graphJSONResponse(req, `{}`)
+		}
+	})
+	if err != nil {
+		t.Fatalf("mail reply --html --draft: %v", err)
+	}
+	if calls != 4 {
+		t.Fatalf("Graph requests = %d, want 4", calls)
+	}
+}
+
+func TestMailReplyDraftCommandFailsClearlyWhenTheMailboxTimeZoneIsUnreadable(t *testing.T) {
+	generated := `<html><body><div id="divRplyFwdMsg"><b>Sent:</b> Monday, 14 September 2026 07:45:15<br></div></body></html>`
+	call := 0
+	_, _, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "<p>Thanks</p>", "--html", "--draft",
+	}, func(req *http.Request) *http.Response {
+		call++
+		switch call {
+		case 1:
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","body":{"contentType":"html","content":`+mustJSONQuote(t, generated)+`}}`)
+		case 2:
+			resp := graphJSONResponse(req, `{"error":{"code":"ErrorAccessDenied","message":"Access is denied."}}`)
+			resp.StatusCode = http.StatusForbidden
+			return resp
+		case 3:
+			if req.Method != http.MethodDelete {
+				t.Fatalf("expected the failed draft to be cleaned up, got %s %s", req.Method, req.URL.Path)
+			}
+			resp := graphJSONResponse(req, ``)
+			resp.StatusCode = http.StatusNoContent
+			return resp
+		default:
+			t.Fatalf("unexpected Graph request %d: %s %s", call, req.Method, req.URL.Path)
+			return graphJSONResponse(req, `{}`)
+		}
+	})
+	if err == nil {
+		t.Fatal("expected an error when the mailbox time zone cannot be read")
+	}
+	if !strings.Contains(err.Error(), "--tz") {
+		t.Fatalf("error does not point at --tz: %v", err)
+	}
+}
+
+func TestMailReplyDraftCommandIgnoresHeaderMarkupInsideTheFragment(t *testing.T) {
+	fragment := `<div id="divRplyFwdMsg"><b>Sent:</b> mine<br></div>`
+	generated := `<html><body><div id="quote">Original history</div></body></html>`
+	call := 0
+	_, calls, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", fragment, "--html", "--draft",
+	}, func(req *http.Request) *http.Response {
+		call++
+		switch call {
+		case 1:
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","body":{"contentType":"html","content":`+mustJSONQuote(t, generated)+`}}`)
+		case 2:
+			if req.Method != http.MethodPatch {
+				t.Fatalf("expected the body patch, got %s %s", req.Method, req.URL.Path)
+			}
+			var payload struct {
+				Body struct {
+					Content string `json:"content"`
+				} `json:"body"`
+			}
+			if err := decodeGraphJSON(req.Body, &payload); err != nil {
+				t.Fatalf("decode patch: %v", err)
+			}
+			if !strings.Contains(payload.Body.Content, `<b>Sent:</b> mine<br>`) {
+				t.Fatalf("fragment was rewritten: %s", payload.Body.Content)
+			}
+			return graphJSONResponse(req, `{"id":"draft-id"}`)
+		default:
+			t.Fatalf("unexpected Graph request %d: %s %s", call, req.Method, req.URL.Path)
+			return graphJSONResponse(req, `{}`)
+		}
+	})
+	if err != nil {
+		t.Fatalf("mail reply --html --draft: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("Graph requests = %d, want 2", calls)
+	}
+}
+
+func TestMailReplyDraftPlainIgnoresTimezoneFlag(t *testing.T) {
+	_, calls, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "Thanks", "--draft", "--tz", "Not/AZone",
+	}, func(req *http.Request) *http.Response {
+		return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+	})
+	if err != nil {
+		t.Fatalf("plain draft must not resolve the zone: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("Graph requests = %d, want 1", calls)
+	}
+}

@@ -173,6 +173,17 @@ func (r *RunContext) GraphClient() (*graphapi.Client, error) {
 // Timezone returns the resolved time.Location for display.
 // Precedence: --tz flag > OLK_TIMEZONE env > config file > Local.
 func (r *RunContext) Timezone() (*time.Location, error) {
+	loc, err := r.ConfiguredTimezone()
+	if err != nil || loc != nil {
+		return loc, err
+	}
+	return time.LoadLocation("Local")
+}
+
+// ConfiguredTimezone returns the display time zone the user chose through
+// the --tz flag, OLK_TIMEZONE or the config file, or nil when none is set so
+// a caller can fall back to something other than the local zone.
+func (r *RunContext) ConfiguredTimezone() (*time.Location, error) {
 	tz := r.Flags.TimeZone
 	if tz == "" {
 		if cfg, err := r.Config(); err == nil {
@@ -180,7 +191,7 @@ func (r *RunContext) Timezone() (*time.Location, error) {
 		}
 	}
 	if tz == "" {
-		tz = "Local"
+		return nil, nil
 	}
 	return time.LoadLocation(tz)
 }
