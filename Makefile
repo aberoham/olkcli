@@ -10,10 +10,19 @@ LDFLAGS  = -s -w \
 
 BINARY   = ./bin/olk
 
-.PHONY: build test lint install clean version
+# A locally built binary that reads the keychain must keep a stable code
+# signature; an unsigned rebuild is a new application to macOS and triggers an
+# access prompt for every stored account. Override for a different identity.
+SIGN_IDENTITY   ?= teams-cli-signer
+SIGN_IDENTIFIER ?= com.rlrghb.olk
+
+.PHONY: build build-signed test lint install clean version
 
 build:
 	go build -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/olk
+
+build-signed: build
+	codesign --force -s $(SIGN_IDENTITY) --identifier $(SIGN_IDENTIFIER) $(BINARY)
 
 test:
 	go test -race -count=1 ./...
