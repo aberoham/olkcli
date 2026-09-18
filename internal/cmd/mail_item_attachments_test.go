@@ -12,7 +12,9 @@ import (
 
 const testForwardedMIME = "From: Sender <sender@example.com>\r\nSubject: Forwarded\r\n\r\nBody\r\n"
 
-func graphRawResponse(req *http.Request, body string) *http.Response {
+// graphMIMEResponse answers a $value request with the test message's raw MIME.
+func graphMIMEResponse(req *http.Request) *http.Response {
+	body := testForwardedMIME
 	return &http.Response{
 		StatusCode:    http.StatusOK,
 		Header:        http.Header{"Content-Type": []string{"message/rfc822"}},
@@ -41,7 +43,7 @@ func mixedAttachmentsResponse(req *http.Request, paths *[]string) *http.Response
 		return graphJSONResponse(req, `{"@odata.type":"#microsoft.graph.itemAttachment",
 			"id":"item","name":"Onboarding","contentType":null,"size":100}`)
 	case strings.HasSuffix(req.URL.Path, "/attachments/item/$value"):
-		return graphRawResponse(req, testForwardedMIME)
+		return graphMIMEResponse(req)
 	default:
 		return graphJSONResponse(req, `{"@odata.type":"#microsoft.graph.fileAttachment",
 			"id":"file","name":"file.txt","size":4,"contentBytes":"dGVzdA=="}`)
@@ -143,7 +145,7 @@ func TestMailAttachmentsDownloadsOneItemAttachmentFromDelegatedMailbox(t *testin
 func TestMailGetFormatEML(t *testing.T) {
 	mime := func(req *http.Request, paths *[]string) *http.Response {
 		*paths = append(*paths, req.URL.Path)
-		return graphRawResponse(req, testForwardedMIME)
+		return graphMIMEResponse(req)
 	}
 
 	t.Run("stdout from a delegated mailbox", func(t *testing.T) {
@@ -236,5 +238,72 @@ func TestMCPMailAttachmentsSavesItemAttachment(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "file.txt") {
 		t.Errorf("stdout = %q, want the file after the failure saved too", stdout)
+	}
+}
+
+func TestMailGetFormatEMLNeverOverwritesOut(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "message.eml")
+	if err := os.WriteFile(out, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, _, err := runMailCommandWithStderr(t,
+		[]string{"mail", "get", "message-id", "--format", "eml", "--out", out},
+		graphMIMEResponse)
+	if err != nil {
+		t.Fatalf("mail get: %v", err)
+	}
+	if content, _ := os.ReadFile(out); string(content) != "keep me" {
+		t.Errorf("existing %s was overwritten with %q", out, content)
+	}
+	alt := strings.TrimSuffix(out, ".eml") + "(1).eml"
+	if content, _ := os.ReadFile(alt); string(content) != testForwardedMIME {
+		t.Errorf("%s = %q, want the export beside the existing file", alt, content)
+	}
+	if !strings.Contains(stdout, "Saved: "+alt) {
+		t.Errorf("stdout = %q, want the path actually written", stdout)
+	}
+}
+
+// Under MCP every call carries --json and --wrap-untrusted, so an .eml export
+// must go to a file, and asking for stdout must fail before Graph is called.
+func TestMCPMailGetFormatEML(t *testing.T) {
+	b := bindingsMap(t, &mcpConfig{})["mail_get"]
+	if b == nil {
+		t.Fatal("mail_get is not registered")
+	}
+	run := func(args map[string]any, paths *[]string) (string, error) {
+		argv, err := buildArgv(b, args)
+		if err != nil {
+			t.Fatalf("buildArgv: %v", err)
+		}
+		cli, kctx, err := prepareCall(argv, &b.env)
+		if err != nil {
+			t.Fatalf("prepareCall(%v): %v", argv, err)
+		}
+		client := testMailListClient(t, func(req *http.Request) *http.Response {
+			*paths = append(*paths, req.URL.Path)
+			return graphMIMEResponse(req)
+		})
+		stdout, _, err := captureStd(func() error {
+			return kctx.Run(&RunContext{Ctx: context.Background(), Flags: &cli.RootFlags, client: client})
+		})
+		return stdout, err
+	}
+
+	var paths []string
+	out := filepath.Join(t.TempDir(), "message.eml")
+	if _, err := run(map[string]any{"id": "message-id", "format": "eml", "out": out}, &paths); err != nil {
+		t.Fatalf("mail_get eml to file: %v", err)
+	}
+	if content, _ := os.ReadFile(out); string(content) != testForwardedMIME {
+		t.Errorf("%s = %q, want the MIME", out, content)
+	}
+
+	paths = nil
+	if _, err := run(map[string]any{"id": "message-id", "format": "eml"}, &paths); err == nil {
+		t.Error("mail_get eml to stdout succeeded under MCP, want refusal")
+	}
+	if len(paths) != 0 {
+		t.Errorf("Graph requests = %v, want none", paths)
 	}
 }

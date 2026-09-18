@@ -162,6 +162,9 @@ func TestDownloadAttachmentFetchesItemAttachmentMIME(t *testing.T) {
 		{"empty contentType still downloads", `null`, "Onboarding documentation", forwardedMIME, "Onboarding documentation.eml"},
 		{"name already ends in .eml", `"message/rfc822"`, "note.EML", forwardedMIME, "note.EML"},
 		{"unnamed message", `null`, "", forwardedMIME, "attachment.eml"},
+		{"name is only the extension", `null`, ".eml", forwardedMIME, "attachment.eml"},
+		{"name ends in a separator", `null`, "folder/", forwardedMIME, "folder.eml"},
+		{"name carries a path", `null`, `..\\..\\evil`, forwardedMIME, "evil.eml"},
 		{"attached contact", `null`, "Alex Wilbur", "BEGIN:VCARD\r\nFN:Alex Wilbur\r\nEND:VCARD\r\n", "Alex Wilbur.vcf"},
 		{"attached event", `null`, "Review", "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", "Review.ics"},
 	}

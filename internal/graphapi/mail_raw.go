@@ -49,13 +49,19 @@ func itemAttachmentFilename(name string, content []byte) string {
 	case bytes.HasPrefix(head, []byte("BEGIN:VCALENDAR")):
 		ext = ".ics"
 	}
-	if name == "" {
-		name = "attachment"
-	}
+	// The caller strips directory components and leading dots from the result,
+	// so reduce the name to its last component first; otherwise "folder/" or
+	// ".eml" would lose the extension to that sanitizing.
+	name = strings.TrimRight(name, `/\ `)
+	name = name[strings.LastIndexAny(name, `/\`)+1:]
+	stem, suffix := name, ext
 	if strings.HasSuffix(strings.ToLower(name), ext) {
-		return name
+		stem, suffix = name[:len(name)-len(ext)], name[len(name)-len(ext):]
 	}
-	return name + ext
+	if strings.Trim(stem, ". ") == "" {
+		stem = "attachment"
+	}
+	return stem + suffix
 }
 
 // GetMessageMIME returns the full message as RFC 5322 MIME, suitable for
