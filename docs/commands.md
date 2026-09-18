@@ -34,7 +34,8 @@ olk whoami
 
 ```bash
 olk mail list [-n N] [--folder ID_OR_PATH] [--from EMAIL] [--unread] [--focused|--other]
-olk mail get <ID> [--body-format text|html]
+olk mail get <ID> [--format full|text|html]
+olk mail get <ID> --format eml [--out FILE]
 olk mail search <KQL>
 olk mail batch <ID> [--id ID ...]
 olk mail thread <CONVERSATION_ID>
@@ -97,6 +98,18 @@ under 3 MB. Immediate replies, sends, and forwards do not accept `--inline`.
 to match an attachment to a `cid:` reference in the HTML body; attachment names
 can repeat. Missing content IDs are empty strings. Query attachments directly
 when inspecting inline images, even if the message reports `hasAttachments: false`.
+
+An attached email, event or contact (what Outlook creates when a message is
+forwarded as an attachment) downloads as its raw MIME: `.eml` for a message,
+`.ics` for an event, `.vcf` for a contact. An attachment that is only a link to
+a OneDrive or SharePoint file cannot be downloaded. With `--save`, an
+attachment that fails is reported on stderr, the rest are still saved, and the
+command exits non-zero.
+
+`mail get --format eml` writes the whole message as RFC 5322 MIME, unaltered,
+to stdout or to `--out FILE`, which is never overwritten. Under
+`--wrap-untrusted` (and so under `olk mcp`) it requires `--out`, because raw
+MIME cannot carry the markers.
 
 ## Calendar
 
