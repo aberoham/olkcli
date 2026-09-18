@@ -19,6 +19,15 @@ linters:
     - unparam
     - whitespace
   settings:
+    goconst:
+      # goconst 1.10 (golangci-lint 2.12) began reporting strings inside
+      # composite literals, and setting exclude-types replaces the default
+      # that skipped call arguments. Here those literals are $select field
+      # lists, MCP command paths, table headers and error formats, which read
+      # best spelled out; both are excluded to keep the earlier scope.
+      exclude-types:
+        - CompositeLit
+        - Call
     gocritic:
       enabled-tags:
         - diagnostic
