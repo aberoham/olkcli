@@ -33,6 +33,7 @@ var advertisedCapabilities = []string{
 	"mail.thread.complete-v1",
 	"mail.attachments.inline-identity-v1",
 	"mail.shared-mailbox-send-v1",
+	"mail.drafts.recipients-v1",
 	"mcp.delegated-mailbox-v1",
 }
 

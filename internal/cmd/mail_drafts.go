@@ -47,14 +47,16 @@ func (c *MailDraftsListCmd) Run(ctx *RunContext) error {
 	}
 
 	loc, _ := ctx.Timezone()
-	headers := []string{"ID", "SUBJECT", "TO", "CREATED"}
+	headers := []string{"ID", "SUBJECT", "TO", "CC", "CREATED"}
 	rows := make([][]string, 0, len(drafts))
-	for _, d := range drafts {
+	for i := range drafts {
+		d := &drafts[i]
 		id := outfmt.Truncate(d.ID, 15)
 		subject := outfmt.Truncate(d.Subject, 60)
 		to := outfmt.Truncate(strings.Join(d.To, ", "), 40)
+		cc := outfmt.Truncate(strings.Join(d.Cc, ", "), 40)
 		created := outfmt.Truncate(outfmt.ConvertTime(d.Created, loc), 16)
-		rows = append(rows, []string{id, subject, to, created})
+		rows = append(rows, []string{id, subject, to, cc, created})
 	}
 
 	return printer.Print(headers, rows, drafts, len(drafts), "")

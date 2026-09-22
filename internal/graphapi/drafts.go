@@ -13,6 +13,8 @@ type DraftMessage struct {
 	ID      string   `json:"id"`
 	Subject string   `json:"subject" untrusted:"true"`
 	To      []string `json:"to" untrusted:"true"`
+	Cc      []string `json:"cc" untrusted:"true"`
+	Bcc     []string `json:"bcc" untrusted:"true"`
 	Body    string   `json:"body,omitempty" untrusted:"true"`
 	Created string   `json:"createdDateTime"`
 }
@@ -22,7 +24,7 @@ type DraftMessage struct {
 func (c *Client) ListDrafts(ctx context.Context, target string, top int32) ([]DraftMessage, error) {
 	top = clampTop(top)
 
-	selectFields := []string{"id", "subject", "toRecipients", "body", "createdDateTime"}
+	selectFields := []string{"id", "subject", "toRecipients", "ccRecipients", "bccRecipients", "body", "createdDateTime"}
 	resp, err := c.targetUser(target).MailFolders().ByMailFolderId("drafts").Messages().Get(ctx, &users.ItemMailFoldersItemMessagesRequestBuilderGetRequestConfiguration{
 		QueryParameters: &users.ItemMailFoldersItemMessagesRequestBuilderGetQueryParameters{
 			Top:    &top,
@@ -170,11 +172,9 @@ func convertDraft(msg models.Messageable) DraftMessage {
 	if msg.GetSubject() != nil {
 		d.Subject = *msg.GetSubject()
 	}
-	for _, r := range msg.GetToRecipients() {
-		if r.GetEmailAddress() != nil && r.GetEmailAddress().GetAddress() != nil {
-			d.To = append(d.To, *r.GetEmailAddress().GetAddress())
-		}
-	}
+	d.To = recipientAddresses(msg.GetToRecipients())
+	d.Cc = recipientAddresses(msg.GetCcRecipients())
+	d.Bcc = recipientAddresses(msg.GetBccRecipients())
 	if msg.GetBody() != nil && msg.GetBody().GetContent() != nil {
 		d.Body = *msg.GetBody().GetContent()
 	}
