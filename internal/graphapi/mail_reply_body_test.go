@@ -62,7 +62,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 			path:        "/forward",
 			wantForward: true,
 			call: func(c *Client) error {
-				return c.ForwardMessage(context.Background(), "", "message-id", "Reply body", []string{"person@example.com"}, false)
+				return c.ForwardMessage(context.Background(), "", "message-id", &ForwardOptions{To: []string{"person@example.com"}, Comment: "Reply body", IsHTML: false})
 			},
 		},
 		{
@@ -71,7 +71,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 			html:        true,
 			wantForward: true,
 			call: func(c *Client) error {
-				return c.ForwardMessage(context.Background(), "", "message-id", "<p>Reply body</p>", []string{"person@example.com"}, true)
+				return c.ForwardMessage(context.Background(), "", "message-id", &ForwardOptions{To: []string{"person@example.com"}, Comment: "<p>Reply body</p>", IsHTML: true})
 			},
 		},
 	}

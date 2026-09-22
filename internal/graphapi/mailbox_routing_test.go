@@ -78,7 +78,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "team@example.com",
 			want:   "/v1.0/users/team@example.com/messages/AAA/forward",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ForwardMessage(ctx, target, "AAA", "", []string{"person@example.com"}, false)
+				return c.ForwardMessage(ctx, target, "AAA", &ForwardOptions{To: []string{"person@example.com"}, Comment: "", IsHTML: false})
 			},
 		},
 		{
@@ -86,7 +86,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "",
 			want:   meBuilderPath + "/messages/AAA/forward",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ForwardMessage(ctx, target, "AAA", "", []string{"person@example.com"}, false)
+				return c.ForwardMessage(ctx, target, "AAA", &ForwardOptions{To: []string{"person@example.com"}, Comment: "", IsHTML: false})
 			},
 		},
 		{

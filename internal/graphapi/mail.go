@@ -445,11 +445,11 @@ const (
 		"before retrying"
 	replyGrantHint = sendGrantHint + ".\n\n" + replyIDHint
 
-	replyDraftGrantHint = "Creating a reply draft in another mailbox needs the Mail.ReadWrite.Shared " +
+	replyDraftGrantHint = "Creating a reply or forward draft in another mailbox needs the Mail.ReadWrite.Shared " +
 		"scope (sign in again with --scope Mail.ReadWrite.Shared) and Full Access on that mailbox in " +
 		"Exchange. It does not require Mail.Send.Shared, Send As, or Send on Behalf Of because the " +
 		"draft is not sent"
-	replyDraftIDHint = "Creating a reply draft reads the original from that mailbox, so the message " +
+	replyDraftIDHint = "Creating a reply or forward draft reads the original from that mailbox, so the message " +
 		"ID must be one listed from it: IDs are scoped to a mailbox, and an ID taken from your own " +
 		"will not resolve in a shared one"
 	draftGrantHint = "Creating or modifying a draft in another mailbox needs the Mail.ReadWrite.Shared " +
@@ -575,41 +575,6 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment st
 			return sharedMailboxError(action, target, replyGrantHint, err)
 		}
 		return fmt.Errorf("%s: %w", action, err)
-	}
-	return nil
-}
-
-// ForwardMessage forwards a message from the target mailbox, or from the
-// signed-in user's own mailbox when target is empty. As with ReplyMessage, the
-// target selects both the mailbox the original is read from and the sending
-// identity.
-func (c *Client) ForwardMessage(ctx context.Context, target, messageID, comment string, toRecipients []string, isHTML bool) error {
-	if err := c.ensureMaySend(); err != nil {
-		return err
-	}
-	if err := validateID(messageID, "message ID"); err != nil {
-		return err
-	}
-	body := users.NewItemMessagesItemForwardPostRequestBody()
-	fwdR, err := makeRecipients(toRecipients)
-	if err != nil {
-		return fmt.Errorf("invalid forward recipient: %w", err)
-	}
-	if isHTML {
-		message := htmlMessageBody(comment)
-		message.SetToRecipients(fwdR)
-		body.SetMessage(message)
-	} else {
-		body.SetComment(&comment)
-		body.SetToRecipients(fwdR)
-	}
-
-	err = c.targetUser(target).Messages().ByMessageId(messageID).Forward().Post(ctx, body, nil)
-	if err != nil {
-		if target != "" {
-			return sharedMailboxError("forward", target, replyGrantHint, err)
-		}
-		return fmt.Errorf("forward: %w", err)
 	}
 	return nil
 }

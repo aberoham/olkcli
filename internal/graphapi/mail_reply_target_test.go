@@ -20,7 +20,7 @@ func TestReplyMessage_NoSendGuardBeatsTarget(t *testing.T) {
 func TestForwardMessage_NoSendGuardBeatsTarget(t *testing.T) {
 	c := &Client{}
 	c.SetGuards(false, true)
-	err := c.ForwardMessage(context.Background(), "shared@example.com", "AAA", "", []string{"a@example.com"}, false)
+	err := c.ForwardMessage(context.Background(), "shared@example.com", "AAA", &ForwardOptions{To: []string{"a@example.com"}, Comment: "", IsHTML: false})
 	if err == nil {
 		t.Fatal("expected --no-send to block a forward from a shared mailbox target")
 	}
@@ -38,7 +38,7 @@ func TestReplyMessage_InvalidIDRejected(t *testing.T) {
 
 func TestForwardMessage_InvalidRecipientRejected(t *testing.T) {
 	c := &Client{}
-	err := c.ForwardMessage(context.Background(), "", "AAA", "", []string{"not-an-address"}, false)
+	err := c.ForwardMessage(context.Background(), "", "AAA", &ForwardOptions{To: []string{"not-an-address"}, Comment: "", IsHTML: false})
 	if err == nil || !strings.Contains(err.Error(), "recipient") {
 		t.Fatalf("want a recipient error, got %v", err)
 	}
