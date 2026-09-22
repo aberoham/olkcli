@@ -112,16 +112,23 @@ To edit an existing draft without sending it:
 olk mail drafts attach <DRAFT_ID> report.pdf --mailbox shared@example.com --json
 olk mail drafts update <DRAFT_ID> --cc colleague@example.com --mailbox shared@example.com --json
 olk mail drafts update <DRAFT_ID> --bcc= --dry-run --json
+olk mail drafts update <DRAFT_ID> --subject "Corrected subject" --json
 ```
 
 `attach` uploads one regular file under 3 MB. `update` replaces only the supplied
 To, CC or BCC lists; omit a flag to leave that list unchanged, or pass an empty
-string to clear it. The body, subject and reply history are left unchanged.
+string to clear it. `--subject` replaces the subject. `--body` (with `--html` for
+HTML) replaces the whole body, which on a reply or forward draft includes the
+quoted original Outlook generated. To change only the wording above that history
+in a reply draft, create a new one from the original message with
+`mail reply --draft`, check it, and then delete the old draft. Without `--body`,
+the body and reply history are left unchanged.
 Both commands honour `--mailbox`, `--no-write`, `--no-send`, `--dry-run`, `--json`
 and `--plain`. They check that the message is a draft before editing. Shared
 mailbox edits need `Mail.ReadWrite.Shared` and Full Access. JSON receipts include
 `id`, `mailbox` (empty for the signed-in user), and `dryRun`, plus `attachment`
-or `recipients`. In recipient receipts, null means unchanged and [] means clear.
+or `recipients`, `subject` and `bodyReplaced`. In update receipts, null means
+unchanged and [] means clear.
 The new commands are CLI-only; the MCP tool allowlist is unchanged.
 
 For inline images, reference each image in the HTML as `cid:CID`, then supply

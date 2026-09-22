@@ -45,7 +45,7 @@ func TestDraftRecipientPatchPreservesOmissionAndClearsEmptyLists(t *testing.T) {
 				}
 			})
 			client.noSend = true
-			err := client.UpdateDraftRecipients(context.Background(), target, "draft-id", DraftRecipients{CC: []string{}, BCC: []string{"bcc@example.com"}})
+			err := client.UpdateDraft(context.Background(), target, "draft-id", DraftRecipients{CC: []string{}, BCC: []string{"bcc@example.com"}}, DraftContent{})
 			if err != nil || calls != 2 {
 				t.Fatalf("error=%v calls=%d", err, calls)
 			}
@@ -98,11 +98,11 @@ func TestDraftEditsRejectInvalidInputsBeforeRequests(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"empty update", func() error { return client.UpdateDraftRecipients(ctx, "", "draft-id", DraftRecipients{}) }},
+		{"empty update", func() error { return client.UpdateDraft(ctx, "", "draft-id", DraftRecipients{}, DraftContent{}) }},
 		{"invalid recipient", func() error {
-			return client.UpdateDraftRecipients(ctx, "", "draft-id", DraftRecipients{To: []string{"invalid"}})
+			return client.UpdateDraft(ctx, "", "draft-id", DraftRecipients{To: []string{"invalid"}}, DraftContent{})
 		}},
-		{"invalid ID", func() error { return client.UpdateDraftRecipients(ctx, "", "", DraftRecipients{To: []string{}}) }},
+		{"invalid ID", func() error { return client.UpdateDraft(ctx, "", "", DraftRecipients{To: []string{}}, DraftContent{}) }},
 		{"oversize", func() error {
 			_, err := client.AttachToDraft(ctx, "", "draft-id", "f", "text/plain", make([]byte, MaxInlineAttachmentBytes))
 			return err
@@ -115,7 +115,7 @@ func TestDraftEditsRejectInvalidInputsBeforeRequests(t *testing.T) {
 		})
 	}
 	client.noWrite = true
-	if err := client.UpdateDraftRecipients(ctx, "shared@example.com", "id", DraftRecipients{CC: []string{}}); !errors.Is(err, ErrNoWrite) {
+	if err := client.UpdateDraft(ctx, "shared@example.com", "id", DraftRecipients{CC: []string{}}, DraftContent{}); !errors.Is(err, ErrNoWrite) {
 		t.Fatalf("error=%v", err)
 	}
 	if _, err := client.AttachToDraft(ctx, "shared@example.com", "id", "f", "text/plain", nil); !errors.Is(err, ErrNoWrite) {
@@ -136,7 +136,7 @@ func TestDraftEditsRefuseNonDraftAndMissingDraftState(t *testing.T) {
 			if attach {
 				_, err = client.AttachToDraft(context.Background(), "", "id", "f", "text/plain", nil)
 			} else {
-				err = client.UpdateDraftRecipients(context.Background(), "", "id", DraftRecipients{CC: []string{}})
+				err = client.UpdateDraft(context.Background(), "", "id", DraftRecipients{CC: []string{}}, DraftContent{})
 			}
 			if err == nil || !strings.Contains(err.Error(), "not a draft") {
 				t.Fatalf("error=%v", err)
@@ -172,12 +172,85 @@ func TestDraftEditsPreserveProviderErrors(t *testing.T) {
 			if attach {
 				_, err = client.AttachToDraft(context.Background(), "shared@example.com", "id", "f", "text/plain", nil)
 			} else {
-				err = client.UpdateDraftRecipients(context.Background(), "shared@example.com", "id", DraftRecipients{To: []string{}})
+				err = client.UpdateDraft(context.Background(), "shared@example.com", "id", DraftRecipients{To: []string{}}, DraftContent{})
 			}
 			code, status := ErrorMetadata(err)
 			if code != errorAccessDeniedCode || status != http.StatusForbidden {
 				t.Fatalf("error=%v code=%s status=%d", err, code, status)
 			}
 		}
+	}
+}
+
+func TestDraftContentPatchSendsOnlyWhatWasSupplied(t *testing.T) {
+	subject := "Re: Corrected subject"
+	empty := ""
+	htmlBody := "<p>Corrected wording</p>"
+	textBody := "Corrected wording"
+	for _, tc := range []struct {
+		name    string
+		content DraftContent
+		want    map[string]any
+	}{
+		{
+			name:    "subject only",
+			content: DraftContent{Subject: &subject},
+			want:    map[string]any{"subject": subject},
+		},
+		{
+			name:    "subject cleared",
+			content: DraftContent{Subject: &empty},
+			want:    map[string]any{"subject": ""},
+		},
+		{
+			name:    "HTML body",
+			content: DraftContent{Body: &htmlBody, IsHTML: true},
+			want:    map[string]any{"body": map[string]any{"contentType": "html", "content": htmlBody}},
+		},
+		{
+			name:    "text body with subject",
+			content: DraftContent{Subject: &subject, Body: &textBody},
+			want:    map[string]any{"subject": subject, "body": map[string]any{"contentType": "text", "content": textBody}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			patched := false
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				if req.URL.Path != "/v1.0/users/shared@example.com/messages/draft-id" {
+					t.Fatalf("path = %s", req.URL.Path)
+				}
+				if req.Method == http.MethodGet {
+					return graphJSONResponse(req, `{"isDraft":true}`)
+				}
+				var got map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+					t.Fatal(err)
+				}
+				delete(got, "@odata.type")
+				if body, ok := got["body"].(map[string]any); ok {
+					delete(body, "@odata.type")
+				}
+				if !reflect.DeepEqual(got, tc.want) {
+					t.Fatalf("PATCH = %#v, want %#v", got, tc.want)
+				}
+				patched = true
+				return graphJSONResponse(req, `{"id":"draft-id"}`)
+			})
+			if err := client.UpdateDraft(context.Background(), "shared@example.com", "draft-id", DraftRecipients{}, tc.content); err != nil {
+				t.Fatalf("UpdateDraft: %v", err)
+			}
+			if !patched {
+				t.Fatal("UpdateDraft sent no PATCH")
+			}
+		})
+	}
+}
+
+func TestDraftContentRefusesAnHTMLTypeWithoutABody(t *testing.T) {
+	client := &Client{}
+	subject := "Subject"
+	err := client.UpdateDraft(context.Background(), "", "draft-id", DraftRecipients{}, DraftContent{Subject: &subject, IsHTML: true})
+	if err == nil || !strings.Contains(err.Error(), "needs a body") {
+		t.Fatalf("error = %v, want a refusal of an HTML type with no body", err)
 	}
 }
