@@ -58,19 +58,32 @@ func (c *Client) AttachToDraft(ctx context.Context, target, draftID, name, conte
 	return &result, nil
 }
 
-// DraftRecipients carries the recipient lists an UpdateDraftRecipients call
-// replaces. A nil slice leaves that list untouched; an empty slice clears it.
+// DraftRecipients carries the recipient lists an UpdateDraft call replaces. A
+// nil slice leaves that list untouched; an empty slice clears it.
 type DraftRecipients struct {
 	To  []string `json:"to" untrusted:"true"`
 	CC  []string `json:"cc" untrusted:"true"`
 	BCC []string `json:"bcc" untrusted:"true"`
 }
 
-// UpdateDraftRecipients replaces the To, CC and BCC lists of an existing draft
-// in the target mailbox, or in the signed-in user's own mailbox when target is
-// empty. The body and subject are left alone: a reply draft's body includes
-// the quoted original, and rewriting it here would silently drop that.
-func (c *Client) UpdateDraftRecipients(ctx context.Context, target, draftID string, recipients DraftRecipients) error {
+// DraftContent carries the subject and body an UpdateDraft call replaces. A
+// nil pointer leaves that field untouched. Body replaces the whole body, so on
+// a reply or forward draft it also replaces the quoted original that Outlook
+// generated; the caller must supply that history again if it is wanted.
+type DraftContent struct {
+	Subject *string
+	Body    *string
+	IsHTML  bool
+}
+
+func (content DraftContent) empty() bool {
+	return content.Subject == nil && content.Body == nil
+}
+
+// UpdateDraft replaces the recipient lists, subject or body of an existing
+// draft in the target mailbox, or in the signed-in user's own mailbox when
+// target is empty. Only what is supplied changes.
+func (c *Client) UpdateDraft(ctx context.Context, target, draftID string, recipients DraftRecipients, content DraftContent) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -78,8 +91,11 @@ func (c *Client) UpdateDraftRecipients(ctx context.Context, target, draftID stri
 		return err
 	}
 
-	if recipients.To == nil && recipients.CC == nil && recipients.BCC == nil {
-		return fmt.Errorf("no recipient lists supplied")
+	if recipients.To == nil && recipients.CC == nil && recipients.BCC == nil && content.empty() {
+		return fmt.Errorf("nothing to update: no recipient lists, subject or body supplied")
+	}
+	if content.IsHTML && content.Body == nil {
+		return fmt.Errorf("an HTML body type needs a body to apply to")
 	}
 	patch := models.NewMessage()
 	if recipients.To != nil {
@@ -104,14 +120,30 @@ func (c *Client) UpdateDraftRecipients(ctx context.Context, target, draftID stri
 		patch.SetBccRecipients(r)
 	}
 
+	if content.Subject != nil {
+		subject := *content.Subject
+		patch.SetSubject(&subject)
+	}
+	if content.Body != nil {
+		body := models.NewItemBody()
+		text := *content.Body
+		bodyType := models.TEXT_BODYTYPE
+		if content.IsHTML {
+			bodyType = models.HTML_BODYTYPE
+		}
+		body.SetContent(&text)
+		body.SetContentType(&bodyType)
+		patch.SetBody(body)
+	}
+
 	if err := c.requireDraft(ctx, target, draftID); err != nil {
 		return err
 	}
 	if _, err := c.targetUser(target).Messages().ByMessageId(draftID).Patch(ctx, patch, nil); err != nil {
 		if target != "" {
-			return sharedMailboxDraftError("updating draft recipients", target, err)
+			return sharedMailboxDraftError("updating draft", target, err)
 		}
-		return fmt.Errorf("updating draft recipients: %w", err)
+		return fmt.Errorf("updating draft: %w", err)
 	}
 	return nil
 }
