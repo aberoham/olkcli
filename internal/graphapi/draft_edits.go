@@ -126,7 +126,7 @@ func (c *Client) requireDraft(ctx context.Context, target, draftID string) error
 		return sharedMailboxReadError("checking draft", target, err)
 	}
 	if message == nil || message.GetIsDraft() == nil || !*message.GetIsDraft() {
-		return fmt.Errorf("message is not a draft")
+		return fmt.Errorf("message %s is not a draft: pass the ID of a draft, as listed by mail drafts list, not the ID of a received or sent message", draftID)
 	}
 	return nil
 }
