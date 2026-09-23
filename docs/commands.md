@@ -85,8 +85,13 @@ The new commands are CLI-only; the MCP tool allowlist is unchanged.
 `mail reply --draft` creates a true threaded Outlook reply or reply-all draft,
 including Outlook's quoted history, and returns its draft ID and subject. For
 HTML drafts, `olk` inserts the supplied HTML ahead of that generated history
-instead of replacing it. Use `--json` for a structured draft response. It does
-not send; without `--draft`, replies retain their immediate-send behavior.
+instead of replacing it. Graph writes the quoted `Sent:` line in UTC with a
+weekday and seconds; HTML drafts rewrite it in the display time zone (`--tz`,
+`OLK_TIMEZONE`, config, or the local zone) in Outlook on the web's
+`14 September 2026 08:45` layout. That costs one extra read of the original
+message's `sentDateTime`. A `Sent:` line in any other layout is left as Graph
+wrote it. Use `--json` for a structured draft response. It does not send;
+without `--draft`, replies retain their immediate-send behavior.
 
 `--inline CID=PATH` is repeatable on `mail reply --html --draft` and
 `mail drafts create --html`. Reference every supplied CID in the HTML as

@@ -55,11 +55,16 @@ func (c *MailReplyCmd) Run(ctx *RunContext) error {
 	}
 
 	if c.Draft {
+		quoteLocation, err := ctx.Timezone()
+		if err != nil {
+			return err
+		}
 		draft, err := client.CreateReplyDraft(ctx.Ctx, target, c.ID, &graphapi.CreateReplyDraftOptions{
 			Body:              c.Body,
 			ReplyAll:          c.ReplyAll,
 			IsHTML:            c.HTML,
 			InlineAttachments: inlineAttachments,
+			QuoteTimeLocation: quoteLocation,
 		})
 		if err != nil {
 			return err
