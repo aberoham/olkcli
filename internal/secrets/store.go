@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/99designs/keyring"
 	"golang.org/x/term"
@@ -134,13 +135,38 @@ func NewKeyringStore() (*KeyringStore, error) {
 // keychain lets only the application that created an item delete it, and a
 // rebuilt or re-signed binary is a different application (error -25244).
 // Signing out and back in recreates the item with the name.
+//
+// Several olk processes can refresh the same account's token at once, and the
+// macOS keychain does not serialize them: the keyring library adds the item,
+// falls back to updating it when the add reports a duplicate, and the update
+// itself can then fail with errSecDuplicateItem (-25299) while another process
+// is writing the same item. That error means the item exists and was just
+// written, so the write is retried once after a short pause rather than
+// failing the command.
 func (s *KeyringStore) Set(key, value string) error {
-	return s.ring.Set(keyring.Item{
+	item := keyring.Item{
 		Key:         key,
 		Data:        []byte(value),
 		Label:       ItemLabel(key),
 		Description: "olk Microsoft 365 credential",
-	})
+	}
+	err := s.ring.Set(item)
+	if err != nil && isKeychainDuplicate(err) {
+		time.Sleep(duplicateRetryDelay)
+		err = s.ring.Set(item)
+	}
+	return err
+}
+
+// duplicateRetryDelay gives a concurrent writer time to finish before the
+// retry. It is a variable so tests can remove the wait.
+var duplicateRetryDelay = 200 * time.Millisecond
+
+// isKeychainDuplicate reports whether err is the keychain's errSecDuplicateItem.
+// The keyring library formats the underlying error with %v, so the typed value
+// is lost and only its status code in the message identifies it.
+func isKeychainDuplicate(err error) bool {
+	return strings.Contains(err.Error(), "(-25299)")
 }
 
 // ItemLabel is the human-readable name a stored key gets in the OS
