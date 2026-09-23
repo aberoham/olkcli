@@ -146,3 +146,59 @@ func runDraftEditCommand(t *testing.T, path, args []string, responder func(*http
 	})
 	return output, calls, err
 }
+
+func TestDraftUpdateCommandReplacesSubjectAndBody(t *testing.T) {
+	output, calls, err := runDraftEditCommand(t, []string{"mail", "drafts", "update"}, []string{"id", "--subject", "Re: Corrected", "--body", "<p>New</p>", "--html", "--json"}, func(req *http.Request) *http.Response {
+		if req.Method == http.MethodGet {
+			return graphJSONResponse(req, `{"isDraft":true}`)
+		}
+		var payload map[string]json.RawMessage
+		if err := decodeGraphJSON(req.Body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if string(payload["subject"]) != `"Re: Corrected"` || !strings.Contains(string(payload["body"]), `"contentType":"html"`) {
+			t.Fatalf("payload=%s", payload)
+		}
+		if _, ok := payload["toRecipients"]; ok {
+			t.Fatalf("payload changed recipients it was not given: %s", payload)
+		}
+		return graphJSONResponse(req, `{"id":"id"}`)
+	})
+	if err != nil || calls != 2 {
+		t.Fatalf("error=%v calls=%d", err, calls)
+	}
+	var envelope struct {
+		Results struct {
+			Subject      *string `json:"subject"`
+			BodyReplaced bool    `json:"bodyReplaced"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Results.Subject == nil || *envelope.Results.Subject != "Re: Corrected" || !envelope.Results.BodyReplaced {
+		t.Fatalf("output=%s", output)
+	}
+}
+
+func TestDraftUpdateCommandContentValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		wantError bool
+	}{
+		{"subject dry run", []string{"id", "--subject", "New", "--dry-run", "--json"}, false},
+		{"html without body", []string{"id", "--subject", "New", "--html", "--dry-run"}, true},
+		{"body over the size limit", []string{"id", "--body", strings.Repeat("x", maxBodySize+1), "--dry-run"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			output, calls, err := runDraftEditCommand(t, []string{"mail", "drafts", "update"}, tc.args, func(req *http.Request) *http.Response { t.Fatalf("unexpected Graph request: %s", req.URL); return nil })
+			if (err != nil) != tc.wantError || calls != 0 {
+				t.Fatalf("error=%v calls=%d", err, calls)
+			}
+			if !tc.wantError && !strings.Contains(output, `"subject": "New"`) {
+				t.Fatalf("output=%s", output)
+			}
+		})
+	}
+}
