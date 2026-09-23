@@ -136,13 +136,11 @@ func NewKeyringStore() (*KeyringStore, error) {
 // rebuilt or re-signed binary is a different application (error -25244).
 // Signing out and back in recreates the item with the name.
 //
-// Several olk processes can refresh the same account's token at once, and the
-// macOS keychain does not serialize them: the keyring library adds the item,
-// falls back to updating it when the add reports a duplicate, and the update
-// itself can then fail with errSecDuplicateItem (-25299) while another process
-// is writing the same item. That error means the item exists and was just
-// written, so the write is retried once after a short pause rather than
-// failing the command.
+// The keyring library adds the item and falls back to updating it when the
+// add reports a duplicate. That update has been seen to fail with
+// errSecDuplicateItem (-25299) when several olk processes refreshed the same
+// account's token at once. The write is retried once after a short pause;
+// if the retry fails too, its error is returned.
 func (s *KeyringStore) Set(key, value string) error {
 	item := keyring.Item{
 		Key:         key,

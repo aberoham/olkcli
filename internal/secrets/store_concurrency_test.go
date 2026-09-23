@@ -2,102 +2,66 @@ package secrets
 
 import (
 	"errors"
-	"sync"
 	"testing"
 
 	"github.com/99designs/keyring"
 )
 
 // errDuplicate is the message the keyring library produces when the macOS
-// keychain rejects an update because another process wrote the same item.
+// keychain rejects an update with errSecDuplicateItem.
 var errDuplicate = errors.New("failed to update item in keychain: " +
 	"The specified item already exists in the keychain. (-25299)")
 
-// racingRing stands in for the keychain. Its first `failures` Set calls report
-// errSecDuplicateItem, as the real keychain does to the loser of a concurrent
-// write; later calls succeed.
-type racingRing struct {
+var errInteraction = errors.New("user interaction is not allowed (-25308)")
+
+// scriptedRing stands in for the keychain. Each Set call returns the next
+// scripted error; a nil entry stores the item.
+type scriptedRing struct {
 	keyring.Keyring
-	mu       sync.Mutex
-	failures int
-	calls    int
-	stored   map[string]string
+	errs   []error
+	calls  int
+	stored map[string]string
 }
 
-func (r *racingRing) Set(item keyring.Item) error { //nolint:gocritic // signature fixed by keyring.Keyring
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (r *scriptedRing) Set(item keyring.Item) error { //nolint:gocritic // signature fixed by keyring.Keyring
+	err := r.errs[r.calls]
 	r.calls++
-	if r.failures > 0 {
-		r.failures--
-		return errDuplicate
+	if err == nil {
+		r.stored[item.Key] = string(item.Data)
 	}
-	r.stored[item.Key] = string(item.Data)
-	return nil
+	return err
 }
 
-func TestSetRetriesConcurrentKeychainDuplicate(t *testing.T) {
+func TestSetRetriesADuplicateItemOnce(t *testing.T) {
 	duplicateRetryDelay = 0
-	const writers = 6
-	ring := &racingRing{failures: 1, stored: map[string]string{}}
-	store := &KeyringStore{ring: ring}
-	key := TokenKey("someone@example.com")
-
-	var wg sync.WaitGroup
-	errs := make(chan error, writers)
-	for range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- store.Set(key, "refresh-token")
-		}()
+	tests := []struct {
+		name      string
+		errs      []error
+		wantErr   error
+		wantCalls int
+	}{
+		{"duplicate then success", []error{errDuplicate, nil}, nil, 2},
+		{"duplicate twice", []error{errDuplicate, errDuplicate}, errDuplicate, 2},
+		{"duplicate then a different error", []error{errDuplicate, errInteraction}, errInteraction, 2},
+		{"other error is not retried", []error{errInteraction}, errInteraction, 1},
+		{"success first time", []error{nil}, nil, 1},
 	}
-	wg.Wait()
-	close(errs)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ring := &scriptedRing{errs: tc.errs, stored: map[string]string{}}
+			store := &KeyringStore{ring: ring}
 
-	for err := range errs {
-		if err != nil {
-			t.Errorf("Set: %v; a concurrent writer's duplicate error should be retried", err)
-		}
+			err := store.Set("k", "v")
+
+			if !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (err == nil) {
+				t.Fatalf("Set error = %v, want %v", err, tc.wantErr)
+			}
+			if ring.calls != tc.wantCalls {
+				t.Errorf("Set attempts = %d, want %d", ring.calls, tc.wantCalls)
+			}
+			if tc.wantErr == nil && ring.stored["k"] != "v" {
+				t.Errorf("stored = %q, want the value", ring.stored["k"])
+			}
+		})
 	}
-	if ring.stored[key] != "refresh-token" {
-		t.Errorf("stored = %q, want the token", ring.stored[key])
-	}
-}
-
-func TestSetGivesUpAfterOneRetry(t *testing.T) {
-	duplicateRetryDelay = 0
-	ring := &racingRing{failures: 2, stored: map[string]string{}}
-	store := &KeyringStore{ring: ring}
-
-	if err := store.Set("k", "v"); err == nil {
-		t.Fatal("Set succeeded, want the second duplicate error returned")
-	}
-	if ring.calls != 2 {
-		t.Errorf("Set attempts = %d, want 2", ring.calls)
-	}
-}
-
-func TestSetDoesNotRetryOtherErrors(t *testing.T) {
-	duplicateRetryDelay = 0
-	ring := &failingRing{err: errors.New("user interaction is not allowed (-25308)")}
-	store := &KeyringStore{ring: ring}
-
-	if err := store.Set("k", "v"); err == nil {
-		t.Fatal("Set succeeded, want the error returned")
-	}
-	if ring.calls != 1 {
-		t.Errorf("Set attempts = %d, want 1: only a duplicate is worth retrying", ring.calls)
-	}
-}
-
-type failingRing struct {
-	keyring.Keyring
-	err   error
-	calls int
-}
-
-func (r *failingRing) Set(keyring.Item) error {
-	r.calls++
-	return r.err
 }
