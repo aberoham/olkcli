@@ -9,7 +9,33 @@ permissions:
   contents: write
 
 jobs:
+  # A fork may publish only vX.Y.Z-alpha.N, -beta.N or -rc.N. A plain tag
+  # would sort as upstream's stable release of the same number, and the
+  # personal tap accepts only these forms.
+  verify-tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check tag form
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          UPSTREAM: ${{ github.repository == 'rlrghb/olkcli' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$UPSTREAM" != true && ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]]; then
+            echo "Forks publish only vX.Y.Z-alpha.N, -beta.N or -rc.N; got ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+  ci:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   pre-build:
+    needs: [verify-tag, ci]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

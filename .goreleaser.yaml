@@ -32,6 +32,8 @@ checksum:
     - glob: ./prebuilt-archives/*
 
 release:
+  # Tags such as v1.14.1-alpha.1 are marked as GitHub prereleases.
+  prerelease: auto
   extra_files:
     - glob: ./prebuilt-archives/*
 
@@ -48,6 +50,9 @@ homebrew_casks:
       owner: rlrghb
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    # Only upstream publishes this cask. A fork's own tap reads its releases
+    # and writes its cask itself, so a fork holds no tap credential.
+    skip_upload: '{{ if eq (envOrDefault "GITHUB_REPOSITORY" "") "rlrghb/olkcli" }}false{{ else }}true{{ end }}'
     name: olk
     binaries:
       - olk
