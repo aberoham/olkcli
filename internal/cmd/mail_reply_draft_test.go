@@ -390,3 +390,27 @@ func TestMailReplyDraftCommandWritesTheQuotedSentLineInTheDisplayZone(t *testing
 		t.Fatalf("Graph requests = %d, want 3", calls)
 	}
 }
+
+func TestMailReplyDraftCommandChecksTheTimeZoneOnlyForHTML(t *testing.T) {
+	_, calls, err := runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "<p>Thanks</p>", "--html", "--draft", "--tz", "Invalid/Zone",
+	}, func(req *http.Request) *http.Response {
+		t.Fatalf("unexpected Graph request: %s %s", req.Method, req.URL.Path)
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "Invalid/Zone") {
+		t.Fatalf("HTML draft error = %v, want the invalid zone named", err)
+	}
+	if calls != 0 {
+		t.Fatalf("Graph requests = %d, want 0", calls)
+	}
+
+	_, _, err = runMailCommand(t, []string{"mail", "reply"}, []string{
+		"AAA", "--body", "Thanks", "--draft", "--tz", "Invalid/Zone",
+	}, func(req *http.Request) *http.Response {
+		return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject"}`)
+	})
+	if err != nil {
+		t.Fatalf("plain draft with an unused invalid zone: %v", err)
+	}
+}

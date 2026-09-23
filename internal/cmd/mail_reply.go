@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rlrghb/olkcli/internal/graphapi"
 	"github.com/rlrghb/olkcli/internal/outfmt"
@@ -55,9 +56,12 @@ func (c *MailReplyCmd) Run(ctx *RunContext) error {
 	}
 
 	if c.Draft {
-		quoteLocation, err := ctx.Timezone()
-		if err != nil {
-			return err
+		var quoteLocation *time.Location
+		if c.HTML {
+			quoteLocation, err = ctx.Timezone()
+			if err != nil {
+				return err
+			}
 		}
 		draft, err := client.CreateReplyDraft(ctx.Ctx, target, c.ID, &graphapi.CreateReplyDraftOptions{
 			Body:              c.Body,
