@@ -130,11 +130,19 @@ func (c *Client) CreateDraft(ctx context.Context, target, subject, body string, 
 // signed-in user's own mailbox when target is empty. Sending a draft that lives
 // in someone else's mailbox still needs Send As or Send on Behalf Of — creating
 // the draft does not confer the right to send it.
+//
+// The ID is checked to be a draft first. Graph refuses a send of a received
+// message with "The specified object was not found in the store", and from a
+// shared mailbox that arrived beneath the grant advice below, which sent the
+// caller looking at permissions rather than at the ID they had passed.
 func (c *Client) SendDraft(ctx context.Context, target, draftID string) error {
 	if err := c.ensureMaySend(); err != nil {
 		return err
 	}
 	if err := validateID(draftID, "draft ID"); err != nil {
+		return err
+	}
+	if err := c.requireDraft(ctx, target, draftID); err != nil {
 		return err
 	}
 	err := c.targetUser(target).Messages().ByMessageId(draftID).Send().Post(ctx, nil)

@@ -82,6 +82,10 @@ mailbox edits need `Mail.ReadWrite.Shared` and Full Access. JSON receipts includ
 or `recipients`. In recipient receipts, null means unchanged and [] means clear.
 The new commands are CLI-only; the MCP tool allowlist is unchanged.
 
+`mail drafts send` makes the same check before sending, so passing the ID of a
+received or sent message fails with "is not a draft" rather than a Graph
+not-found error that reads like a missing send permission.
+
 `mail reply --draft` creates a true threaded Outlook reply or reply-all draft,
 including Outlook's quoted history, and returns its draft ID and subject. For
 HTML drafts, `olk` inserts the supplied HTML ahead of that generated history

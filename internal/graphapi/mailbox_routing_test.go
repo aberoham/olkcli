@@ -138,6 +138,14 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			var got string
 			calls := 0
 			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				// Sending checks that the ID is a draft, in the same mailbox,
+				// before the write this test is about.
+				if req.Method == http.MethodGet {
+					if wantRead := strings.TrimSuffix(tc.want, "/send"); req.URL.Path != wantRead {
+						t.Errorf("draft check path = %q, want %q", req.URL.Path, wantRead)
+					}
+					return graphJSONResponse(req, `{"isDraft":true}`)
+				}
 				calls++
 				got = req.URL.Path
 				// Draft creation is the one call here that reads its response.
