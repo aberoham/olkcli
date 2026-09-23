@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -209,5 +210,35 @@ func TestMailGetFormatEMLReportsAWriteFailure(t *testing.T) {
 		[]string{"mail", "get", "message-id", "--format", "eml", "--out", out}, graphMIMEResponse)
 	if err == nil || !strings.Contains(err.Error(), "writing "+out) {
 		t.Fatalf("error = %v, want the failed write named", err)
+	}
+}
+
+// The results already say which attachments failed, so the top-level error
+// handler must not append a second JSON document to the same stdout.
+func TestMailAttachmentsSaveJSONIsOneDocumentOnPartialFailure(t *testing.T) {
+	var paths []string
+	stdout, _, err := runMailCommandWithStderr(t,
+		[]string{"mail", "attachments", "message-id", "--save", "--out", t.TempDir(), "--json"},
+		func(req *http.Request) *http.Response { return mixedAttachmentsResponse(req, &paths) })
+	if err == nil {
+		t.Fatal("want a non-zero exit for the failed attachment")
+	}
+	var full, errOut bytes.Buffer
+	writeCommandError(true, err, &full, &errOut)
+	combined := stdout + full.String()
+
+	decoder := json.NewDecoder(strings.NewReader(combined))
+	documents := 0
+	for {
+		var v any
+		if decodeErr := decoder.Decode(&v); decodeErr == io.EOF {
+			break
+		} else if decodeErr != nil {
+			t.Fatalf("output is not JSON: %v\n%s", decodeErr, combined)
+		}
+		documents++
+	}
+	if documents != 1 {
+		t.Fatalf("stdout holds %d JSON documents, want 1:\n%s", documents, combined)
 	}
 }

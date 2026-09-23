@@ -147,7 +147,11 @@ func (c *MailAttachmentsCmd) saveAll(
 		}
 	}
 	if failed > 0 {
-		return fmt.Errorf("%d of %d attachments could not be saved", failed, len(attachments))
+		err := fmt.Errorf("%d of %d attachments could not be saved", failed, len(attachments))
+		if structured {
+			return &reportedInOutputError{err: err}
+		}
+		return err
 	}
 	return nil
 }
