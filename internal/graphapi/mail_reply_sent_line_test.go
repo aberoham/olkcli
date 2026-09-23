@@ -47,6 +47,7 @@ func TestRewriteQuotedSentLineLeavesBodyAloneWhenNothingToRewrite(t *testing.T) 
 		{"sent after the header closes", `<div id="divRplyFwdMsg"><b>From:</b> x<br></div><b>Sent:</b> Monday, 14 September 2026 07:45:15<br>`},
 		{"month-first layout", `<div id="divRplyFwdMsg"><b>Sent:</b> Monday, September 14, 2026 7:45:15 AM<br></div>`},
 		{"already rewritten", `<div id="divRplyFwdMsg"><b>Sent:</b> 14 September 2026 08:45<br></div>`},
+		{"sent only in a nested header", `<div id="divRplyFwdMsg"><b>From:</b> x<br><div id="divRplyFwdMsg"><b>Sent:</b> Friday, 11 September 2026 16:00:00<br></div></div>`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -124,3 +125,36 @@ func TestCreateReplyDraftDeletesTheDraftWhenTheSentTimeCannotBeRead(t *testing.T
 }
 
 var quotedReplyBodyJSON, _ = json.Marshal(quotedReplyBody)
+
+func TestCreateReplyDraftDeletesTheDraftWhenGraphOmitsTheSentTime(t *testing.T) {
+	var deleted, patched bool
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		switch req.Method {
+		case http.MethodPost:
+			return quotedReplyDraftResponse(req)
+		case http.MethodGet:
+			return graphJSONResponse(req, `{"id":"AAA","sentDateTime":null}`)
+		case http.MethodPatch:
+			patched = true
+			return graphJSONResponse(req, `{"id":"draft-id"}`)
+		case http.MethodDelete:
+			deleted = true
+			return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: http.NoBody, Request: req}
+		default:
+			t.Fatalf("unexpected Graph request: %s %s", req.Method, req.URL.Path)
+			return nil
+		}
+	})
+	_, err := client.CreateReplyDraft(context.Background(), "", "AAA", &CreateReplyDraftOptions{
+		Body: "<p>Thanks</p>", IsHTML: true, QuoteTimeLocation: time.UTC,
+	})
+	if err == nil || !strings.Contains(err.Error(), "Graph returned no sentDateTime for AAA") {
+		t.Fatalf("error = %v, want the missing sentDateTime", err)
+	}
+	if patched {
+		t.Fatal("the draft was patched after the sent time could not be read")
+	}
+	if !deleted {
+		t.Fatal("the incomplete draft was not deleted")
+	}
+}

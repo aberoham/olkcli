@@ -26,9 +26,9 @@ const (
 // quotedSentLineBounds locates the value of the quoted "Sent:" line in the
 // outermost divRplyFwdMsg block: the run between the label and the next tag.
 // Outlook writes the header lines before any nested element closes, so the
-// search stops at the first closing div after the marker; a Sent label past
-// that point belongs to an older reply deeper in the quote and keeps what
-// its author's client wrote. The value must be in Graph's layout.
+// search stops at the first closing div or nested header after the marker; a
+// Sent label past that point belongs to an older reply deeper in the quote
+// and keeps what its author's client wrote. The value must be in Graph's layout.
 func quotedSentLineBounds(html string) (start, end int, ok bool) {
 	header := strings.Index(html, quotedHeaderMarker)
 	if header < 0 {
@@ -37,6 +37,9 @@ func quotedSentLineBounds(html string) (start, end int, ok bool) {
 	block := html[header:]
 	if closing := strings.Index(block, "</div>"); closing >= 0 {
 		block = block[:closing]
+	}
+	if nested := strings.Index(block[len(quotedHeaderMarker):], quotedHeaderMarker); nested >= 0 {
+		block = block[:len(quotedHeaderMarker)+nested]
 	}
 	label := strings.Index(block, quotedSentLabel)
 	if label < 0 {
