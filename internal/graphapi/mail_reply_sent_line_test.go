@@ -127,13 +127,32 @@ func TestCreateReplyDraftDeletesTheDraftWhenTheSentTimeCannotBeRead(t *testing.T
 var quotedReplyBodyJSON, _ = json.Marshal(quotedReplyBody)
 
 func TestCreateReplyDraftDeletesTheDraftWhenGraphOmitsTheSentTime(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		original func(*http.Request) *http.Response
+	}{
+		{"null sentDateTime", func(req *http.Request) *http.Response {
+			return graphJSONResponse(req, `{"id":"AAA","sentDateTime":null}`)
+		}},
+		{"no message", func(req *http.Request) *http.Response {
+			return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: http.NoBody, Request: req}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertSentTimeFailureDeletesDraft(t, tc.original)
+		})
+	}
+}
+
+func assertSentTimeFailureDeletesDraft(t *testing.T, original func(*http.Request) *http.Response) {
+	t.Helper()
 	var deleted, patched bool
 	client := testGraphClient(t, func(req *http.Request) *http.Response {
 		switch req.Method {
 		case http.MethodPost:
 			return quotedReplyDraftResponse(req)
 		case http.MethodGet:
-			return graphJSONResponse(req, `{"id":"AAA","sentDateTime":null}`)
+			return original(req)
 		case http.MethodPatch:
 			patched = true
 			return graphJSONResponse(req, `{"id":"draft-id"}`)
