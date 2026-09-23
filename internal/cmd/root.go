@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -273,6 +274,15 @@ func Execute() int {
 	return 0
 }
 
+// reportedInOutputError marks a failure whose details the command already
+// printed as its JSON result, such as one attachment of several that could not
+// be saved. The command still exits non-zero, but in JSON mode no second
+// document follows the first, so the output stays one parseable value.
+type reportedInOutputError struct{ err error }
+
+func (e *reportedInOutputError) Error() string { return e.err.Error() }
+func (e *reportedInOutputError) Unwrap() error { return e.err }
+
 func writeCommandError(
 	jsonMode bool,
 	err error,
@@ -280,6 +290,10 @@ func writeCommandError(
 	stderr io.Writer,
 ) {
 	if jsonMode {
+		var reported *reportedInOutputError
+		if errors.As(err, &reported) {
+			return
+		}
 		code, status := graphapi.ErrorMetadata(err)
 		value := struct {
 			Error struct {
