@@ -103,8 +103,9 @@ forwarded as an attachment) downloads as its raw MIME: `.eml` for a message,
 a OneDrive or SharePoint file cannot be downloaded. With `--save`, an
 attachment that fails is reported on stderr, the rest are still saved, and the
 command exits non-zero. With `--json` or `--wrap-untrusted`, `--save` instead
-prints one result per attachment (`id`, `name`, and `path` or `error`), with the
-sender-chosen name, path and error marked as untrusted.
+prints one JSON result per attachment (`id`, `name`, and `path` or `error`) and
+still exits non-zero after a failure. Under `--wrap-untrusted`, which `olk mcp`
+always sets, the sender-chosen name, path and error are marked as untrusted.
 
 `mail get --format eml` writes the whole message as RFC 5322 MIME, unaltered,
 to stdout or to `--out FILE`. Under `--wrap-untrusted` (and so under
