@@ -104,12 +104,15 @@ forwarded as an attachment) downloads as its raw MIME: `.eml` for a message,
 `.ics` for an event, `.vcf` for a contact. An attachment that is only a link to
 a OneDrive or SharePoint file cannot be downloaded. With `--save`, an
 attachment that fails is reported on stderr, the rest are still saved, and the
-command exits non-zero.
+command exits non-zero. With `--json` or `--wrap-untrusted`, `--save` instead
+prints one result per attachment (`id`, `name`, and `path` or `error`), with the
+sender-chosen name, path and error marked as untrusted.
 
 `mail get --format eml` writes the whole message as RFC 5322 MIME, unaltered,
 to stdout or to `--out FILE`, which is never overwritten. Under
-`--wrap-untrusted` (and so under `olk mcp`) it requires `--out`, because raw
-MIME cannot carry the markers.
+`--wrap-untrusted` (and so under `olk mcp`) or `--json` it requires `--out`,
+because raw MIME cannot carry the markers; with `--json` it prints the message
+`id` and the saved `path`.
 
 ## Calendar
 

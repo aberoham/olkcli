@@ -100,25 +100,51 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
+// attachmentSaveResult reports one attachment of a --save run. The name, the
+// path built from it and any error that quotes it all come from the sender.
+type attachmentSaveResult struct {
+	ID    string `json:"id"`
+	Name  string `json:"name" untrusted:"true"`
+	Path  string `json:"path,omitempty" untrusted:"true"`
+	Error string `json:"error,omitempty" untrusted:"true"`
+}
+
 // saveAll downloads every attachment into --out. One attachment that cannot be
-// saved does not stop the rest: each failure is reported on stderr as it
-// happens, and the command fails at the end so a script still sees it.
+// saved does not stop the rest, and the command fails at the end so a script
+// still sees it. With --json or --wrap-untrusted the outcome of each
+// attachment is printed as one structured list, so a sender-chosen name never
+// reaches an agent unmarked; otherwise each failure goes to stderr as it
+// happens.
 func (c *MailAttachmentsCmd) saveAll(
 	ctx *RunContext, client *graphapi.Client, target string, attachments []graphapi.Attachment,
 ) error {
 	if err := validateOutDir(c.Out); err != nil {
 		return err
 	}
+	structured := ctx.Flags.JSON || ctx.Flags.WrapUntrusted
+	results := make([]attachmentSaveResult, 0, len(attachments))
 	failed := 0
 	for i := range attachments {
 		a := &attachments[i]
+		result := attachmentSaveResult{ID: a.ID, Name: a.Name}
 		saved, err := saveAttachment(ctx, client, target, c.ID, a, c.Out)
-		if err != nil {
+		switch {
+		case err != nil:
 			failed++
-			fmt.Fprintf(os.Stderr, "Failed: %s: %v\n", outfmt.Sanitize(a.Name), err)
-			continue
+			result.Error = err.Error()
+			if !structured {
+				fmt.Fprintf(os.Stderr, "Failed: %s: %v\n", outfmt.Sanitize(a.Name), err)
+			}
+		case !structured:
+			fmt.Printf("Saved: %s\n", saved)
 		}
-		fmt.Printf("Saved: %s\n", saved)
+		result.Path = saved
+		results = append(results, result)
+	}
+	if structured {
+		if err := ctx.Printer().PrintJSON(results, len(results), ""); err != nil {
+			return err
+		}
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d of %d attachments could not be saved", failed, len(attachments))

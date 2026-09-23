@@ -28,6 +28,10 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target s
 		return fmt.Errorf("--format eml cannot write raw MIME to stdout under --wrap-untrusted; " +
 			"pass --out <file> to save it instead")
 	}
+	if c.Out == "" && ctx.Flags.JSON {
+		return fmt.Errorf("--format eml cannot write raw MIME to stdout as JSON; " +
+			"pass --out <file> to save it and get the path as JSON")
+	}
 	content, err := client.GetMessageMIME(ctx.Ctx, target, c.ID)
 	if err != nil {
 		return err
@@ -40,8 +44,17 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target s
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", c.Out, err)
 	}
+	if ctx.Flags.JSON {
+		return ctx.Printer().PrintJSON(emlExport{ID: c.ID, Path: saved}, 1, "")
+	}
 	fmt.Printf("Saved: %s\n", saved)
 	return nil
+}
+
+// emlExport reports where `mail get --format eml --out` saved the message.
+type emlExport struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
 }
 
 func (c *MailGetCmd) Run(ctx *RunContext) error {
