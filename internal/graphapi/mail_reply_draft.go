@@ -41,7 +41,11 @@ type CreateReplyDraftOptions struct {
 	InlineAttachments []InlineAttachmentInput
 }
 
-const graphReplySubjectPrefix = "RE: "
+const (
+	graphReplySubjectPrefix = "RE: "
+	replyDraftKind          = "reply draft"
+	forwardDraftKind        = "forward draft"
+)
 
 // outlookWebReplySubject normalizes Graph's uppercase reply prefix to the
 // casing Outlook on the web uses. This is limited to the generated prefix;
@@ -110,9 +114,9 @@ func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string,
 		return &draft, nil
 	}
 
-	draft, err := c.finishHTMLReplyDraft(ctx, target, draftID, result, opts)
+	draft, err := c.finishHTMLReplyDraft(ctx, target, draftID, result, opts, replyDraftKind)
 	if err != nil {
-		return nil, c.cleanupFailedDraft(ctx, target, draftID, "reply draft", err)
+		return nil, c.cleanupFailedDraft(ctx, target, draftID, replyDraftKind, err)
 	}
 	return draft, nil
 }
@@ -125,7 +129,7 @@ func validateCreateReplyDraftOptions(opts *CreateReplyDraftOptions) error {
 		return fmt.Errorf("inline attachments require an HTML reply draft")
 	}
 	if opts.IsHTML && htmlDocumentTagPattern.MatchString(opts.Body) {
-		return fmt.Errorf("HTML reply body must be a fragment, not a complete html or body document")
+		return fmt.Errorf("HTML draft body must be a fragment, not a complete html or body document")
 	}
 	return validateInlineAttachments(opts.Body, opts.IsHTML, opts.InlineAttachments)
 }
@@ -202,30 +206,31 @@ func (c *Client) finishHTMLReplyDraft(
 	target, draftID string,
 	created models.Messageable,
 	opts *CreateReplyDraftOptions,
+	kind string,
 ) (*DraftMessage, error) {
 	generated := created
 	generatedHTML, insertionIndex, ok := replyDraftHTMLInsertionPoint(generated)
 	if !ok {
 		var err error
-		generated, err = c.getReplyDraftHTML(ctx, target, draftID)
+		generated, err = c.getReplyDraftHTML(ctx, target, draftID, kind)
 		if err != nil {
 			return nil, err
 		}
 		generatedHTML, insertionIndex, ok = replyDraftHTMLInsertionPoint(generated)
 		if !ok {
-			return nil, fmt.Errorf("reading generated reply draft %s: Graph did not return a usable HTML body with a body element", draftID)
+			return nil, fmt.Errorf("reading generated %s %s: Graph did not return a usable HTML body with a body element", kind, draftID)
 		}
 	}
 
 	combinedHTML := generatedHTML[:insertionIndex] + opts.Body + generatedHTML[insertionIndex:]
 	subject := outlookWebReplySubject(derefStr(generated.GetSubject()))
-	updated, err := c.patchReplyDraftHTML(ctx, target, draftID, subject, combinedHTML)
+	updated, err := c.patchReplyDraftHTML(ctx, target, draftID, subject, combinedHTML, kind)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, attachment := range opts.InlineAttachments {
-		if err := c.addInlineReplyDraftAttachment(ctx, target, draftID, attachment); err != nil {
+		if err := c.addInlineReplyDraftAttachment(ctx, target, draftID, attachment, kind); err != nil {
 			return nil, err
 		}
 	}
@@ -256,7 +261,8 @@ func (c *Client) finishHTMLReplyDraft(
 	return &draft, nil
 }
 
-func (c *Client) getReplyDraftHTML(ctx context.Context, target, draftID string) (models.Messageable, error) {
+func (c *Client) getReplyDraftHTML(ctx context.Context, target, draftID, kind string) (models.Messageable, error) {
+	action := "reading generated " + kind
 	headers, options, contract, err := newMessageBodyResponseContract(MessageBodyHTML)
 	if err != nil {
 		return nil, err
@@ -267,18 +273,19 @@ func (c *Client) getReplyDraftHTML(ctx context.Context, target, draftID string) 
 		QueryParameters: &users.ItemMessagesMessageItemRequestBuilderGetQueryParameters{Select: messageDetailSelect},
 	})
 	if err != nil {
-		return nil, c.replyDraftError("reading generated reply draft", target, err)
+		return nil, c.replyDraftError(action, target, err)
 	}
 	if err := contract.verify(); err != nil {
-		return nil, fmt.Errorf("reading generated reply draft: %w", err)
+		return nil, fmt.Errorf("%s: %w", action, err)
 	}
 	if result == nil {
-		return nil, fmt.Errorf("reading generated reply draft: Graph returned no draft")
+		return nil, fmt.Errorf("%s: Graph returned no draft", action)
 	}
 	return result, nil
 }
 
-func (c *Client) patchReplyDraftHTML(ctx context.Context, target, draftID, subject, content string) (models.Messageable, error) {
+func (c *Client) patchReplyDraftHTML(ctx context.Context, target, draftID, subject, content, kind string) (models.Messageable, error) {
+	action := "formatting " + kind
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -288,22 +295,22 @@ func (c *Client) patchReplyDraftHTML(ctx context.Context, target, draftID, subje
 	}
 	result, err := c.targetUser(target).Messages().ByMessageId(draftID).Patch(ctx, message, nil)
 	if err != nil {
-		return nil, c.replyDraftError("formatting reply draft", target, err)
+		return nil, c.replyDraftError(action, target, err)
 	}
 	if result == nil {
-		return nil, fmt.Errorf("formatting reply draft: Graph returned no draft")
+		return nil, fmt.Errorf("%s: Graph returned no draft", action)
 	}
 	return result, nil
 }
 
-func (c *Client) addInlineReplyDraftAttachment(ctx context.Context, target, draftID string, attachment InlineAttachmentInput) error {
+func (c *Client) addInlineReplyDraftAttachment(ctx context.Context, target, draftID string, attachment InlineAttachmentInput, kind string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	fileAttachment := newInlineFileAttachment(attachment)
 	_, err := c.targetUser(target).Messages().ByMessageId(draftID).Attachments().Post(ctx, fileAttachment, nil)
 	if err != nil {
-		return c.replyDraftError(fmt.Sprintf("adding inline attachment %q to reply draft", attachment.ContentID), target, err)
+		return c.replyDraftError(fmt.Sprintf("adding inline attachment %q to %s", attachment.ContentID, kind), target, err)
 	}
 	return nil
 }

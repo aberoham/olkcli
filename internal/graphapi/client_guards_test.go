@@ -65,7 +65,9 @@ func TestNoSendGuardBlocksSends(t *testing.T) {
 	}{
 		{"SendMessage", func() error { return c.SendMessage(ctx, "", &SendMessageOptions{Subject: "s", Body: "b"}) }},
 		{"ReplyMessage", func() error { return c.ReplyMessage(ctx, "", "id", "c", false, false) }},
-		{"ForwardMessage", func() error { return c.ForwardMessage(ctx, "", "id", "c", []string{"a@b.com"}, false) }},
+		{"ForwardMessage", func() error {
+			return c.ForwardMessage(ctx, "", "id", &ForwardOptions{To: []string{"a@b.com"}, Comment: "c", IsHTML: false})
+		}},
 		{"SendDraft", func() error { return c.SendDraft(ctx, "", "id") }},
 		{"SendDraft from a shared mailbox", func() error { return c.SendDraft(ctx, "shared@example.com", "id") }},
 		{"RespondToEvent", func() error { return c.RespondToEvent(ctx, "id", "accept") }},

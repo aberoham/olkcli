@@ -45,7 +45,7 @@ olk mail reply <ID> --body "Thanks" --draft
 olk mail reply <ID> --body '<p>Thanks</p>' --html --draft
 olk mail reply <ID> --body '<p>Thanks all</p>' --reply-all --html --draft
 olk mail reply <ID> --body '<p><img src="cid:steps"></p>' --html --draft --inline steps=steps.png
-olk mail forward <ID> --to EMAIL [--comment COMMENT] [--html]
+olk mail forward <ID> --to EMAIL [--cc EMAIL] [--comment COMMENT] [--html] [--draft]
 olk mail mark <ID> read|unread
 olk mail move <ID> ID_OR_PATH [--mailbox EMAIL]
 olk mail delete <ID> --force [--mailbox EMAIL]
@@ -94,6 +94,10 @@ their immediate-send behavior. Use `--json` for a structured draft response,
 which reports the `to`, `cc` and `bcc` lists Outlook returned for the draft.
 `mail drafts list --json` reports the same three lists; its table shows To and
 CC.
+
+`mail forward --draft` does the same for a forward: Outlook generates the
+forwarded original, an HTML comment is inserted ahead of it, and the draft is
+left unsent. `--cc` adds Cc recipients to a forward, sent or drafted.
 
 `--inline CID=PATH` is repeatable on `mail reply --html --draft` and
 `mail drafts create --html`. Reference every supplied CID in the HTML as
