@@ -846,8 +846,15 @@ type AttachmentInput struct {
 	Content     []byte
 }
 
-// DownloadAttachment fetches one file attachment from the target mailbox, or
-// from the signed-in user's mailbox when target is empty.
+// DownloadAttachment fetches one attachment from the target mailbox, or from
+// the signed-in user's mailbox when target is empty.
+//
+// A file attachment carries its bytes inline. An item attachment (an Outlook
+// message, event or contact attached whole, as Outlook does when mail is
+// forwarded as an attachment) has no bytes of its own, so its raw MIME is
+// fetched from $value in a second request and the returned name gains the
+// matching extension. A reference attachment is only a link to a cloud file
+// and has nothing to download.
 func (c *Client) DownloadAttachment(ctx context.Context, target, messageID, attachmentID string) (*Attachment, error) {
 	if err := validateID(messageID, "message ID"); err != nil {
 		return nil, err
@@ -855,7 +862,8 @@ func (c *Client) DownloadAttachment(ctx context.Context, target, messageID, atta
 	if err := validateID(attachmentID, "attachment ID"); err != nil {
 		return nil, err
 	}
-	resp, err := c.targetUser(target).Messages().ByMessageId(messageID).Attachments().ByAttachmentId(attachmentID).Get(ctx, nil)
+	builder := c.targetUser(target).Messages().ByMessageId(messageID).Attachments().ByAttachmentId(attachmentID)
+	resp, err := builder.Get(ctx, nil)
 	if err != nil {
 		return nil, sharedMailboxReadError("downloading attachment", target, err)
 	}
@@ -873,11 +881,24 @@ func (c *Client) DownloadAttachment(ctx context.Context, target, messageID, atta
 		att.Size = *resp.GetSize()
 	}
 
-	// Type-assert to FileAttachmentable to get content bytes
-	if fileAtt, ok := resp.(models.FileAttachmentable); ok {
-		att.Content = fileAtt.GetContentBytes()
-	} else {
-		return nil, fmt.Errorf("attachment %q is not a file attachment", att.Name)
+	// ReferenceAttachmentable adds no methods to the attachment base interface,
+	// so every attachment satisfies it; only the concrete type tells them apart.
+	switch typed := resp.(type) {
+	case models.FileAttachmentable:
+		att.Content = typed.GetContentBytes()
+	case *models.ReferenceAttachment:
+		return nil, fmt.Errorf("attachment %q is a link to a cloud file, not attached content; "+
+			"open the link from the message to reach the file", att.Name)
+	default:
+		if int64(att.Size) > maxAttachmentBytes {
+			return nil, fmt.Errorf("attachment %q is %d bytes, exceeds %d byte limit", att.Name, att.Size, maxAttachmentBytes)
+		}
+		content, err := c.rawAttachmentContent(ctx, builder.PathParameters)
+		if err != nil {
+			return nil, sharedMailboxReadError("downloading item attachment", target, err)
+		}
+		att.Content = content
+		att.Name = itemAttachmentFilename(att.Name, content)
 	}
 
 	if len(att.Content) > maxAttachmentBytes {
