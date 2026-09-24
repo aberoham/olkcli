@@ -181,3 +181,41 @@ func TestDraftEditsPreserveProviderErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestSendDraftRefusesAMessageThatIsNotADraft(t *testing.T) {
+	for _, target := range []string{"", "shared@example.com"} {
+		t.Run(target, func(t *testing.T) {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				if req.Method != http.MethodGet {
+					t.Fatalf("unexpected send of a received message: %s %s", req.Method, req.URL.Path)
+				}
+				return graphJSONResponse(req, `{"isDraft":false}`)
+			})
+			err := client.SendDraft(context.Background(), target, "received-id")
+			if err == nil || !strings.Contains(err.Error(), "received-id is not a draft") {
+				t.Fatalf("error = %v, want a not-a-draft refusal naming the ID", err)
+			}
+			if strings.Contains(err.Error(), "Send As") {
+				t.Errorf("error = %v, should not offer send-permission advice for a non-draft ID", err)
+			}
+		})
+	}
+}
+
+func TestSendDraftReportsAFailedDraftCheckWithoutSendAdvice(t *testing.T) {
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		if req.Method != http.MethodGet {
+			t.Fatalf("unexpected send after a failed draft check: %s %s", req.Method, req.URL.Path)
+		}
+		response := graphJSONResponse(req, `{"error":{"code":"ErrorItemNotFound","message":"The specified object was not found in the store."}}`)
+		response.StatusCode = http.StatusNotFound
+		return response
+	})
+	err := client.SendDraft(context.Background(), "shared@example.com", "stale-id")
+	if code, status := ErrorMetadata(err); code != "ErrorItemNotFound" || status != http.StatusNotFound {
+		t.Fatalf("error = %v, code %q status %d, want the provider's not-found", err, code, status)
+	}
+	if !strings.Contains(err.Error(), "checking draft") || strings.Contains(err.Error(), "Send As") {
+		t.Errorf("error = %v, want the draft check named and no send-permission advice", err)
+	}
+}
