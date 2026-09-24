@@ -42,6 +42,7 @@ func TestVersionJSONAdvertisesStructuredMailCapabilities(t *testing.T) {
 		"mail.thread.complete-v1",
 		"mail.attachments.inline-identity-v1",
 		"mail.shared-mailbox-send-v1",
+		"mail.drafts.recipients-v1",
 		"mcp.delegated-mailbox-v1",
 	}; !reflect.DeepEqual(got.Capabilities, want) {
 		t.Fatalf("capabilities = %v, want %v", got.Capabilities, want)

@@ -10,6 +10,10 @@ import (
 	"testing"
 )
 
+const generatedReplyRecipients = `"toRecipients":[{"emailAddress":{"address":"person@example.com"}}],` +
+	`"ccRecipients":[{"emailAddress":{"address":"copied@example.com"}},{"emailAddress":{"address":"second@example.com"}}],` +
+	`"bccRecipients":[{"emailAddress":{"address":"hidden@example.com"}}]`
+
 const generatedReplyHTML = `<html><head><style>.x{color:red}</style></head><body class="reply"><div id="quoted">Original quoted history</div></body></html>`
 
 func TestCreateReplyDraftRoutesFormatsAndPreservesHistory(t *testing.T) {
@@ -77,9 +81,9 @@ func TestCreateReplyDraftRoutesFormatsAndPreservesHistory(t *testing.T) {
 							t.Error("plain draft unexpectedly sent message.body")
 						}
 					}
-					body := `{"id":"draft-id","subject":"Re: Original subject","toRecipients":[{"emailAddress":{"address":"person@example.com"}}]}`
+					body := `{"id":"draft-id","subject":"Re: Original subject",` + generatedReplyRecipients + `}`
 					if tc.html {
-						body = `{"id":"draft-id","subject":"Re: Original subject","toRecipients":[{"emailAddress":{"address":"person@example.com"}}],"body":{"contentType":"html","content":` + quotedJSON(generatedReplyHTML) + `}}`
+						body = `{"id":"draft-id","subject":"Re: Original subject",` + generatedReplyRecipients + `,"body":{"contentType":"html","content":` + quotedJSON(generatedReplyHTML) + `}}`
 					}
 					return graphJSONResponse(req, body)
 				case 2:
@@ -113,6 +117,13 @@ func TestCreateReplyDraftRoutesFormatsAndPreservesHistory(t *testing.T) {
 			}
 			if draft.ID != "draft-id" || draft.Subject != "Re: Original subject" {
 				t.Errorf("draft = %#v, want returned Graph draft fields", draft)
+			}
+			// The HTML path reports the PATCH response, which here carries no
+			// recipients, so this also covers the fallback to the created draft.
+			if strings.Join(draft.To, ",") != "person@example.com" ||
+				strings.Join(draft.Cc, ",") != "copied@example.com,second@example.com" ||
+				strings.Join(draft.Bcc, ",") != "hidden@example.com" {
+				t.Errorf("draft recipients = to %v cc %v bcc %v, want Graph's generated recipients", draft.To, draft.Cc, draft.Bcc)
 			}
 			if tc.html && (!strings.Contains(draft.Body, tc.content) || !strings.Contains(draft.Body, "Original quoted history")) {
 				t.Errorf("draft body did not preserve reply and quote: %q", draft.Body)
@@ -392,5 +403,65 @@ func replyDraftNoContentResponse(req *http.Request) *http.Response {
 		Header:     http.Header{},
 		Body:       http.NoBody,
 		Request:    req,
+	}
+}
+
+func TestCreateReplyDraftReportsRecipientsFromThePatchedDraft(t *testing.T) {
+	tests := []struct {
+		name    string
+		patched string
+		wantTo  string
+		wantCc  string
+		wantBcc string
+	}{
+		{
+			name:    "lists absent from the PATCH response fall back to the created draft",
+			patched: "",
+			wantTo:  "person@example.com",
+			wantCc:  "copied@example.com,second@example.com",
+			wantBcc: "hidden@example.com",
+		},
+		{
+			name:    "lists present in the PATCH response are reported as returned",
+			patched: `"toRecipients":[{"emailAddress":{"address":"other@example.com"}}],"ccRecipients":[{"emailAddress":{"address":"later@example.com"}}],"bccRecipients":[],`,
+			wantTo:  "other@example.com",
+			wantCc:  "later@example.com",
+			wantBcc: "",
+		},
+		{
+			name:    "lists present but empty in the PATCH response stay empty",
+			patched: `"toRecipients":[],"ccRecipients":[],"bccRecipients":[],`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				switch req.Method {
+				case http.MethodPost:
+					return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject",`+generatedReplyRecipients+
+						`,"body":{"contentType":"html","content":`+quotedJSON(generatedReplyHTML)+`}}`)
+				case http.MethodPatch:
+					return graphJSONResponse(req, `{"id":"draft-id",`+tc.patched+`"body":{"contentType":"html","content":"<html><body></body></html>"}}`)
+				default:
+					t.Fatalf("unexpected Graph request: %s %s", req.Method, req.URL.Path)
+					return graphEmptyResponse(req)
+				}
+			})
+			draft, err := client.CreateReplyDraft(context.Background(), "team@example.com", "AAA", &CreateReplyDraftOptions{
+				Body: "<p>Thanks all</p>", ReplyAll: true, IsHTML: true,
+			})
+			if err != nil {
+				t.Fatalf("CreateReplyDraft: %v", err)
+			}
+			if got := strings.Join(draft.To, ","); got != tc.wantTo {
+				t.Errorf("to = %q, want %q", got, tc.wantTo)
+			}
+			if got := strings.Join(draft.Cc, ","); got != tc.wantCc {
+				t.Errorf("cc = %q, want %q", got, tc.wantCc)
+			}
+			if got := strings.Join(draft.Bcc, ","); got != tc.wantBcc {
+				t.Errorf("bcc = %q, want %q", got, tc.wantBcc)
+			}
+		})
 	}
 }

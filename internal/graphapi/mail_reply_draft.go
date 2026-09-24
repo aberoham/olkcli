@@ -238,8 +238,16 @@ func (c *Client) finishHTMLReplyDraft(
 	if draft.Subject == "" {
 		draft.Subject = subject
 	}
-	if len(draft.To) == 0 {
+	// A recipient list absent from the PATCH response falls back to the created
+	// draft; one present but empty is reported as empty.
+	if updated.GetToRecipients() == nil {
 		draft.To = createdDraft.To
+	}
+	if updated.GetCcRecipients() == nil {
+		draft.Cc = createdDraft.Cc
+	}
+	if updated.GetBccRecipients() == nil {
+		draft.Bcc = createdDraft.Bcc
 	}
 	if draft.Created == "" {
 		draft.Created = createdDraft.Created
