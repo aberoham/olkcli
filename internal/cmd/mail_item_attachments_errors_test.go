@@ -242,3 +242,40 @@ func TestMailAttachmentsSaveJSONIsOneDocumentOnPartialFailure(t *testing.T) {
 		t.Fatalf("stdout holds %d JSON documents, want 1:\n%s", documents, combined)
 	}
 }
+
+func TestValidateEMLStdoutRejectsTerminalButAllowsPipeOrFile(t *testing.T) {
+	if err := validateEMLStdout("", false, false, true); err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("terminal validation error = %v, want refusal to display untrusted MIME", err)
+	}
+	if err := validateEMLStdout("", false, false, false); err != nil {
+		t.Fatalf("redirected stdout should remain available: %v", err)
+	}
+	if err := validateEMLStdout("message.eml", false, true, true); err != nil {
+		t.Fatalf("file output should remain available under wrapping: %v", err)
+	}
+}
+
+func TestMailAttachmentsSaveSanitizesRemoteErrorBeforeWritingToStderr(t *testing.T) {
+	const injected = "\x1b]52;c;clipboard\x07"
+	name, err := json.Marshal(injected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, err := runMailCommandWithStderr(t,
+		[]string{"mail", "attachments", "message-id", "--save", "--out", t.TempDir()},
+		func(req *http.Request) *http.Response {
+			if strings.HasSuffix(req.URL.Path, "/attachments") {
+				return graphJSONResponse(req, `{"value":[{"@odata.type":"#microsoft.graph.referenceAttachment","id":"ref","name":`+string(name)+`,"size":1}]}`)
+			}
+			if strings.HasSuffix(req.URL.Path, "/attachments/ref") {
+				return graphJSONResponse(req, `{"@odata.type":"#microsoft.graph.referenceAttachment","id":"ref","name":`+string(name)+`,"size":1}`)
+			}
+			return graphJSONResponse(req, `{}`)
+		})
+	if err == nil {
+		t.Fatal("want the reference attachment failure")
+	}
+	if strings.Contains(stderr, "\x1b") || strings.Contains(stderr, "\x07") {
+		t.Fatalf("stderr contains terminal control bytes from remote error: %q", stderr)
+	}
+}

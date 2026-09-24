@@ -7,6 +7,7 @@ import (
 
 	"github.com/rlrghb/olkcli/internal/graphapi"
 	"github.com/rlrghb/olkcli/internal/outfmt"
+	"golang.org/x/term"
 )
 
 const (
@@ -24,13 +25,8 @@ type MailGetCmd struct {
 // because sanitizing them would corrupt the file; for the same reason they
 // cannot be wrapped as untrusted content, so an MCP caller must use --out.
 func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target string) error {
-	if c.Out == "" && ctx.Flags.WrapUntrusted {
-		return fmt.Errorf("--format eml cannot write raw MIME to stdout under --wrap-untrusted; " +
-			"pass --out <file> to save it instead")
-	}
-	if c.Out == "" && ctx.Flags.JSON {
-		return fmt.Errorf("--format eml cannot write raw MIME to stdout as JSON; " +
-			"pass --out <file> to save it and get the path as JSON")
+	if err := validateEMLStdout(c.Out, ctx.Flags.JSON, ctx.Flags.WrapUntrusted, term.IsTerminal(int(os.Stdout.Fd()))); err != nil {
+		return err
 	}
 	content, err := client.GetMessageMIME(ctx.Ctx, target, c.ID)
 	if err != nil {
@@ -48,6 +44,25 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target s
 		return ctx.Printer().PrintJSON(emlExport{ID: c.ID, Path: saved}, 1, "")
 	}
 	fmt.Printf("Saved: %s\n", saved)
+	return nil
+}
+
+func validateEMLStdout(out string, jsonMode, wrapUntrusted, terminal bool) error {
+	if out != "" {
+		return nil
+	}
+	if wrapUntrusted {
+		return fmt.Errorf("--format eml cannot write raw MIME to stdout under --wrap-untrusted; " +
+			"pass --out <file> to save it instead")
+	}
+	if jsonMode {
+		return fmt.Errorf("--format eml cannot write raw MIME to stdout as JSON; " +
+			"pass --out <file> to save it and get the path as JSON")
+	}
+	if terminal {
+		return fmt.Errorf("--format eml will not write untrusted raw MIME to a terminal; " +
+			"pass --out <file> to save it or redirect stdout")
+	}
 	return nil
 }
 

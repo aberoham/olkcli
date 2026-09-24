@@ -133,7 +133,7 @@ func (c *MailAttachmentsCmd) saveAll(
 			failed++
 			result.Error = err.Error()
 			if !structured {
-				fmt.Fprintf(os.Stderr, "Failed: %s: %v\n", outfmt.Sanitize(a.Name), err)
+				fmt.Fprintf(os.Stderr, "Failed: %s: %s\n", outfmt.Sanitize(a.Name), outfmt.Sanitize(err.Error()))
 			}
 		case !structured:
 			fmt.Printf("Saved: %s\n", saved)
