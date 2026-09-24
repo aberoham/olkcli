@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rlrghb/olkcli/internal/graphapi"
+	"github.com/rlrghb/olkcli/internal/outfmt"
 )
 
 type MailAttachmentsCmd struct {
@@ -97,6 +100,80 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
+// attachmentSaveResult reports one attachment of a --save run. The name, the
+// path built from it and any error that quotes it all come from the sender.
+type attachmentSaveResult struct {
+	ID    string `json:"id"`
+	Name  string `json:"name" untrusted:"true"`
+	Path  string `json:"path,omitempty" untrusted:"true"`
+	Error string `json:"error,omitempty" untrusted:"true"`
+}
+
+// saveAll downloads every attachment into --out. One attachment that cannot be
+// saved does not stop the rest, and the command fails at the end so a script
+// still sees it. With --json or --wrap-untrusted the outcome of each
+// attachment is printed as one structured list, so a sender-chosen name never
+// reaches an agent unmarked; otherwise each failure goes to stderr as it
+// happens.
+func (c *MailAttachmentsCmd) saveAll(
+	ctx *RunContext, client *graphapi.Client, target string, attachments []graphapi.Attachment,
+) error {
+	if err := validateOutDir(c.Out); err != nil {
+		return err
+	}
+	structured := ctx.Flags.JSON || ctx.Flags.WrapUntrusted
+	results := make([]attachmentSaveResult, 0, len(attachments))
+	failed := 0
+	for i := range attachments {
+		a := &attachments[i]
+		result := attachmentSaveResult{ID: a.ID, Name: a.Name}
+		saved, err := saveAttachment(ctx, client, target, c.ID, a, c.Out)
+		switch {
+		case err != nil:
+			failed++
+			result.Error = err.Error()
+			if !structured {
+				fmt.Fprintf(os.Stderr, "Failed: %s: %s\n", outfmt.Sanitize(a.Name), outfmt.Sanitize(err.Error()))
+			}
+		case !structured:
+			fmt.Printf("Saved: %s\n", saved)
+		}
+		result.Path = saved
+		results = append(results, result)
+	}
+	if structured {
+		if err := ctx.Printer().PrintJSON(results, len(results), ""); err != nil {
+			return err
+		}
+	}
+	if failed > 0 {
+		err := fmt.Errorf("%d of %d attachments could not be saved", failed, len(attachments))
+		if structured {
+			return &reportedInOutputError{err: err}
+		}
+		return err
+	}
+	return nil
+}
+
+func saveAttachment(
+	ctx *RunContext, client *graphapi.Client, target, messageID string, a *graphapi.Attachment, outDir string,
+) (string, error) {
+	if a.Size > maxDownloadSize {
+		return "", fmt.Errorf("%d bytes exceeds the 50MB download limit", a.Size)
+	}
+	att, err := client.DownloadAttachment(ctx.Ctx, target, messageID, a.ID)
+	if err != nil {
+		return "", err
+	}
+	filename := sanitizeFilename(att.Name)
+	saved, err := safeWriteFile(filepath.Join(outDir, filename), att.Content)
+	if err != nil {
+		return "", fmt.Errorf("writing file %q: %w", filename, err)
+	}
+	return saved, nil
+}
+
 func (c *MailAttachmentsCmd) Run(ctx *RunContext) error {
 	client, err := ctx.GraphClient()
 	if err != nil {
@@ -142,29 +219,7 @@ func (c *MailAttachmentsCmd) Run(ctx *RunContext) error {
 
 	// Download all attachments if --save is set
 	if c.Save {
-		outDir := c.Out
-		if err := validateOutDir(outDir); err != nil {
-			return err
-		}
-
-		for _, a := range attachments {
-			if a.Size > maxDownloadSize {
-				return fmt.Errorf("attachment %q is %d bytes, exceeds 50MB download limit", a.Name, a.Size)
-			}
-			att, err := client.DownloadAttachment(ctx.Ctx, target, c.ID, a.ID)
-			if err != nil {
-				return fmt.Errorf("downloading %q: %w", a.Name, err)
-			}
-
-			filename := sanitizeFilename(att.Name)
-			outPath := filepath.Join(outDir, filename)
-			saved, err := safeWriteFile(outPath, att.Content)
-			if err != nil {
-				return fmt.Errorf("writing file %q: %w", filename, err)
-			}
-			fmt.Printf("Saved: %s\n", saved)
-		}
-		return nil
+		return c.saveAll(ctx, client, target, attachments)
 	}
 
 	// Default: list attachments

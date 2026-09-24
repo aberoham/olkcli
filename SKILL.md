@@ -67,6 +67,7 @@ olk auth clean --force                          # remove ALL stored accounts and
 olk mail list [-n 25] [-f FOLDER_ID_OR_PATH] [-u] [--from SENDER] [--after DATE] [--before DATE] [--focused] [--other] [--order newest|oldest] [--select FIELDS]
 # --order cannot be combined with --focused or --other
 olk mail get <ID> [--format full|text|html]
+olk mail get <ID> --format eml [--out FILE]                              # raw message as .eml
 olk mail send --to a@b.com --subject "Hi" --body "Hello"                  # plain
 olk mail send --to a@b.com --subject "Hi" --body "<p>Hello</p>" --html    # HTML
 echo "Hello" | olk mail send --to a@b.com --subject "Hi"                  # body from stdin
@@ -96,6 +97,21 @@ olk mail attachments <ID>                                                 # list
 olk mail attachments <ID> --save [--out DIR]                             # download all
 olk mail attachments <ID> --attachment-id <ATT_ID> [--out DIR]           # download one
 ```
+
+An attached email, event or contact (what Outlook creates when a message is
+forwarded as an attachment) downloads as its raw MIME: `.eml` for a message,
+`.ics` for an event, `.vcf` for a contact. An attachment that is only a link to
+a OneDrive or SharePoint file cannot be downloaded. With `--save`, an
+attachment that fails is reported on stderr, the rest are still saved, and the
+command exits non-zero. With `--json` or `--wrap-untrusted`, `--save` instead
+prints one JSON result per attachment (`id`, `name`, and `path` or `error`) and
+still exits non-zero after a failure. Under `--wrap-untrusted`, which `olk mcp`
+always sets, the sender-chosen name, path and error are marked as untrusted.
+
+`mail get --format eml` writes the whole message as RFC 5322 MIME, unaltered,
+to stdout or to `--out FILE`. Under `--wrap-untrusted` (and so under
+`olk mcp`) or `--json` it requires `--out`, because raw MIME cannot carry the
+markers; with `--json` it prints the message `id` and the saved `path`.
 
 `mail list` defaults to the Inbox when `--folder` is omitted. The `olk inbox`
 and `olk ls` shortcuts use the same default; pass `--folder` to list another
