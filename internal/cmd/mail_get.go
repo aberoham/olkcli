@@ -5,9 +5,10 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/rlrghb/olkcli/internal/graphapi"
 	"github.com/rlrghb/olkcli/internal/outfmt"
-	"golang.org/x/term"
 )
 
 const (
