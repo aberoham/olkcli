@@ -2,7 +2,7 @@ version: 2
 
 before:
   hooks:
-    - go mod tidy
+    - go mod tidy -diff
 
 builds:
   - id: olk-darwin
@@ -49,7 +49,9 @@ homebrew_casks:
   - repository:
       owner: rlrghb
       name: homebrew-tap
-      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+      # envOrDefault: the fork's unprivileged build job has no tap token at all,
+      # and .Env fails on an unset variable even when skip_upload is true.
+      token: '{{ envOrDefault "TAP_GITHUB_TOKEN" "" }}'
     # Only upstream publishes this cask. A fork's own tap reads its releases
     # and writes its cask itself, so a fork holds no tap credential.
     skip_upload: '{{ if eq (envOrDefault "GITHUB_REPOSITORY" "") "rlrghb/olkcli" }}false{{ else }}true{{ end }}'
