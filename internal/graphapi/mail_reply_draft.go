@@ -93,7 +93,7 @@ func HTMLReferencesInlineContentID(body, contentID string) bool {
 
 // CreateReplyDraft creates a real Outlook reply draft in the target mailbox,
 // or in the signed-in user's own mailbox when target is empty. Plain drafts use
-// Graph's comment form, rendered as HTML when the original is HTML. HTML drafts
+// Graph's comment form, which interprets markup even for text originals. HTML drafts
 // first let Graph generate Outlook's quoted history, then insert the supplied
 // fragment into that generated HTML body.
 func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string, opts *CreateReplyDraftOptions) (*DraftMessage, error) {
@@ -115,10 +115,7 @@ func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string,
 
 	createOpts := *opts
 	if !opts.IsHTML {
-		createOpts.Body, err = c.plainComment(ctx, target, messageID, opts.Body, replyDraftKind)
-		if err != nil {
-			return nil, err
-		}
+		createOpts.Body = plainTextHTML(opts.Body)
 	}
 	result, err := c.createReplyDraft(ctx, target, messageID, &createOpts, action)
 	if err != nil {

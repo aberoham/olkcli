@@ -75,9 +75,7 @@ func (c *Client) ForwardMessage(ctx context.Context, target, messageID string, o
 	}
 	comment := opts.Comment
 	if !opts.IsHTML {
-		if comment, err = c.plainComment(ctx, target, messageID, comment, "forward"); err != nil {
-			return err
-		}
+		comment = plainTextHTML(comment)
 	}
 	body := users.NewItemMessagesItemForwardPostRequestBody()
 	switch {
@@ -124,10 +122,7 @@ func (c *Client) CreateForwardDraft(ctx context.Context, target, messageID strin
 	body := users.NewItemMessagesItemCreateForwardPostRequestBody()
 	body.SetMessage(forwardRecipientMessage(models.NewMessage(), recipients))
 	if !opts.IsHTML {
-		comment, err := c.plainComment(ctx, target, messageID, opts.Comment, forwardDraftKind)
-		if err != nil {
-			return nil, err
-		}
+		comment := plainTextHTML(opts.Comment)
 		body.SetComment(&comment)
 	}
 	result, err := c.targetUser(target).Messages().ByMessageId(messageID).CreateForward().Post(ctx, body, nil)

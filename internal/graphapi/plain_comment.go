@@ -1,16 +1,13 @@
 package graphapi
 
 import (
-	"context"
-	"fmt"
 	"html"
 	"strings"
-
-	"github.com/microsoftgraph/msgraph-sdk-go/users"
 )
 
 // plainTextHTML renders plain text as an HTML fragment that keeps its line
-// structure. Each line becomes a div and each blank line an empty div holding
+// structure. Graph interprets JSON comments as HTML even for plain-text
+// originals; escaping must not depend on the original message format. Each line becomes a div and each blank line an empty div holding
 // a break, which is the markup Outlook on the web writes for typed text, so
 // the spacing survives stylesheets that zero paragraph margins. Leading and
 // trailing spaces, and every space that follows another, become non-breaking
@@ -58,45 +55,4 @@ func preserveSpaces(escaped string) string {
 		return result + "&nbsp;"
 	}
 	return out.String()
-}
-
-// nativeBodyProperty is PidTagNativeBody (PtypInteger32). Unlike body.contentType,
-// it describes the stored format rather than Graph's negotiated representation.
-const nativeBodyProperty = "Integer 0x1016"
-
-// plainComment returns the form a plain-text comment must take for a reply to,
-// or forward of, the given message. Graph inserts a comment into an HTML reply
-// as markup, so line breaks would collapse and angle brackets would be read as
-// tags; the text is rendered as HTML when the original is HTML. A comment on a
-// plain-text original stays as written.
-func (c *Client) plainComment(ctx context.Context, target, messageID, text, action string) (string, error) {
-	message, err := c.targetUser(target).Messages().ByMessageId(messageID).Get(ctx,
-		&users.ItemMessagesMessageItemRequestBuilderGetRequestConfiguration{
-			Headers: c.messageIDHeaders(nil),
-			QueryParameters: &users.ItemMessagesMessageItemRequestBuilderGetQueryParameters{
-				Select: []string{"id"},
-				Expand: []string{"singleValueExtendedProperties($filter=id eq '" + nativeBodyProperty + "')"},
-			},
-		})
-	if err != nil {
-		action = "reading the original message's format for " + action
-		if target != "" {
-			return "", sharedMailboxReadError(action, target, err)
-		}
-		return "", fmt.Errorf("%s: %w", action, err)
-	}
-	if message != nil {
-		for _, property := range message.GetSingleValueExtendedProperties() {
-			if property == nil || !strings.EqualFold(derefStr(property.GetId()), nativeBodyProperty) {
-				continue
-			}
-			switch derefStr(property.GetValue()) {
-			case "1": // Native plain text.
-				return text, nil
-			case "3": // Native HTML.
-				return plainTextHTML(text), nil
-			}
-		}
-	}
-	return "", fmt.Errorf("reading the original message's format for %s: native body format is missing or unsupported; use --html with explicitly formatted content", action)
 }

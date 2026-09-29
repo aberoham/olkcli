@@ -109,14 +109,10 @@ reports the `to`, `cc` and `bcc` lists Outlook returned for the draft.
 CC.
 
 A plain (non-`--html`) reply or forward comment keeps its line breaks. Graph
-inserts the comment into an HTML reply as markup, so when the original message
-is HTML, `olk` escapes the text and writes each line as a `<div>`, each blank
-line as `<div><br></div>`, and leading or repeated spaces as `&nbsp;` so
-indented excerpts keep their columns. A comment on a plain-text original is sent
-as written. Deciding costs one read of Outlook's native-body format metadata
-(not the message body). Missing or unsupported formats fail with an explicit error; use `--html`
-with explicitly formatted content in that case. Plain replies and forwards need
-mail read access, including `Mail.Read.Shared` for a delegated mailbox.
+interprets comments as HTML even when the original message is plain text, so
+`olk` escapes the text and writes each line as a `<div>`, each blank line as
+`<div><br></div>`, and leading or repeated spaces as `&nbsp;`. This preserves
+literal angle brackets and indentation without an extra read of the original.
 
 `--cc` and `--bcc` on `mail reply` add recipients to those Outlook generates for
 the reply or reply-all; they do not replace them, and an address already
