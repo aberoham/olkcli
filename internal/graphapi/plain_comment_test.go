@@ -54,7 +54,7 @@ func replyToHTMLOriginal(t *testing.T, basePath string, next roundTripFunc) roun
 			if req.URL.Path != basePath+"/messages/AAA" {
 				t.Errorf("format read path = %q, want %q", req.URL.Path, basePath+"/messages/AAA")
 			}
-			return graphJSONResponse(req, `{"body":{"contentType":"html","content":"<p>original</p>"}}`)
+			return graphJSONResponse(req, `{"singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"3"}]}`)
 		}
 		return next(req)
 	}
@@ -308,5 +308,93 @@ func TestForwardCarriesBcc(t *testing.T) {
 	}
 	if payload.Message == nil || recipientList(payload.Message.BccRecipients) != "audit@example.com" {
 		t.Errorf("forward payload = %+v, want the Bcc inside the message", payload.Message)
+	}
+}
+
+func TestPlainCommentUsesNativeFormatNotReturnedBody(t *testing.T) {
+	for _, tc := range []struct {
+		name, value, bodyType, want string
+		wantErr                     bool
+	}{
+		{"native text returned as HTML", "1", "html", "one\n<two>", false},
+		{"native HTML returned as text", "3", "text", "<div>one</div><div>&lt;two&gt;</div>", false},
+		{"missing", "", "html", "", true},
+		{"unknown", "0", "html", "", true},
+		{"RTF", "2", "html", "", true},
+		{"clear signed", "4", "html", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				if !isOriginalFormatRead(req) || req.URL.Query().Get("$select") != "id" {
+					t.Fatalf("unexpected format query: %s", req.URL)
+				}
+				properties := `[]`
+				if tc.value != "" {
+					properties = `[{"id":"Integer 0x1016","value":"` + tc.value + `"}]`
+				}
+				return graphJSONResponse(req, `{"body":{"contentType":"`+tc.bodyType+`"},"singleValueExtendedProperties":`+properties+`}`)
+			})
+			got, err := client.plainComment(context.Background(), "", "AAA", "one\n<two>", "reply")
+			if (err != nil) != tc.wantErr || got != tc.want {
+				t.Fatalf("comment = %q, error = %v; want %q, error %v", got, err, tc.want, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestImmediateHTMLReplyWithRecipientsAcceptsFullDocument(t *testing.T) {
+	const document = `<!doctype html><html><head><style>p {color: red}</style></head><body><p>Hello</p></body></html>`
+	for _, all := range []bool{false, true} {
+		for _, target := range []string{"", "team@example.com"} {
+			base := meBuilderPath
+			if target != "" {
+				base = "/v1.0/users/" + target
+			}
+			action := "/createReply"
+			if all {
+				action += "All"
+			}
+			var steps []string
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				steps = append(steps, req.Method)
+				switch req.Method {
+				case http.MethodPost:
+					if req.URL.Path == base+"/messages/AAA"+action {
+						var payload replyActionPayload
+						if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+							t.Fatal(err)
+						}
+						if payload.Comment != nil || payload.Message == nil || payload.Message.Body == nil || payload.Message.Body.Content != document || !strings.EqualFold(payload.Message.Body.ContentType, "html") {
+							t.Fatalf("HTML document was not preserved: %+v", payload)
+						}
+						return graphJSONResponse(req, `{"id":"draft-id",`+generatedReplyRecipients+`}`)
+					}
+					if req.URL.Path != base+"/messages/draft-id/send" {
+						t.Fatalf("unexpected send path %s", req.URL.Path)
+					}
+					return graphEmptyResponse(req)
+				case http.MethodPatch:
+					var payload recipientPatchPayload
+					if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+						t.Fatal(err)
+					}
+					if payload.Body != nil || !strings.Contains(recipientList(payload.CcRecipients), "extra@example.com") || !strings.Contains(recipientList(payload.BccRecipients), "audit@example.com") {
+						t.Fatalf("unexpected recipient patch: %+v", payload)
+					}
+					return graphJSONResponse(req, `{"id":"draft-id"}`)
+				case http.MethodGet:
+					return graphJSONResponse(req, `{"isDraft":true}`)
+				default:
+					t.Fatalf("unexpected request %s %s", req.Method, req.URL.Path)
+					return nil
+				}
+			})
+			if err := client.ReplyMessage(context.Background(), target, "AAA", &ReplyOptions{Body: document, IsHTML: true, ReplyAll: all, Cc: []string{"extra@example.com"}, Bcc: []string{"audit@example.com"}}); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(steps, ","); got != "POST,PATCH,GET,POST" {
+				t.Fatalf("requests = %s", got)
+			}
+		}
 	}
 }

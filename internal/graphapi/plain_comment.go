@@ -6,7 +6,6 @@ import (
 	"html"
 	"strings"
 
-	"github.com/microsoftgraph/msgraph-sdk-go/models"
 	"github.com/microsoftgraph/msgraph-sdk-go/users"
 )
 
@@ -61,6 +60,10 @@ func preserveSpaces(escaped string) string {
 	return out.String()
 }
 
+// nativeBodyProperty is PidTagNativeBody (PtypInteger32). Unlike body.contentType,
+// it describes the stored format rather than Graph's negotiated representation.
+const nativeBodyProperty = "Integer 0x1016"
+
 // plainComment returns the form a plain-text comment must take for a reply to,
 // or forward of, the given message. Graph inserts a comment into an HTML reply
 // as markup, so line breaks would collapse and angle brackets would be read as
@@ -69,8 +72,11 @@ func preserveSpaces(escaped string) string {
 func (c *Client) plainComment(ctx context.Context, target, messageID, text, action string) (string, error) {
 	message, err := c.targetUser(target).Messages().ByMessageId(messageID).Get(ctx,
 		&users.ItemMessagesMessageItemRequestBuilderGetRequestConfiguration{
-			Headers:         c.messageIDHeaders(nil),
-			QueryParameters: &users.ItemMessagesMessageItemRequestBuilderGetQueryParameters{Select: []string{"body"}},
+			Headers: c.messageIDHeaders(nil),
+			QueryParameters: &users.ItemMessagesMessageItemRequestBuilderGetQueryParameters{
+				Select: []string{"id"},
+				Expand: []string{"singleValueExtendedProperties($filter=id eq '" + nativeBodyProperty + "')"},
+			},
 		})
 	if err != nil {
 		action = "reading the original message's format for " + action
@@ -79,9 +85,18 @@ func (c *Client) plainComment(ctx context.Context, target, messageID, text, acti
 		}
 		return "", fmt.Errorf("%s: %w", action, err)
 	}
-	if message == nil || message.GetBody() == nil || message.GetBody().GetContentType() == nil ||
-		*message.GetBody().GetContentType() != models.HTML_BODYTYPE {
-		return text, nil
+	if message != nil {
+		for _, property := range message.GetSingleValueExtendedProperties() {
+			if property == nil || !strings.EqualFold(derefStr(property.GetId()), nativeBodyProperty) {
+				continue
+			}
+			switch derefStr(property.GetValue()) {
+			case "1": // Native plain text.
+				return text, nil
+			case "3": // Native HTML.
+				return plainTextHTML(text), nil
+			}
+		}
 	}
-	return plainTextHTML(text), nil
+	return "", fmt.Errorf("reading the original message's format for %s: native body format is missing or unsupported; use --html with explicitly formatted content", action)
 }

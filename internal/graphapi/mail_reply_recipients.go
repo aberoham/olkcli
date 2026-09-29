@@ -76,9 +76,9 @@ func recipientAddress(recipient models.Recipientable) string {
 	return derefStr(recipient.GetEmailAddress().GetAddress())
 }
 
-// finishPlainReplyDraft adds any requested recipients to a plain reply draft.
-// The comment already carries the body, so only the recipient lists change.
-func (c *Client) finishPlainReplyDraft(
+// finishReplyDraftRecipients adds recipients after draft creation
+// has already supplied the body, either as a plain comment or explicit HTML.
+func (c *Client) finishReplyDraftRecipients(
 	ctx context.Context,
 	target, draftID string,
 	created models.Messageable,
