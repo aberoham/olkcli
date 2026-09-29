@@ -34,7 +34,9 @@ type InlineAttachmentInput struct {
 }
 
 // CreateReplyDraftOptions carries the content and reply mode for a threaded
-// reply draft. InlineAttachments are supported only for HTML drafts.
+// reply draft. InlineAttachments are supported only for HTML drafts. Cc and
+// Bcc are added to the recipients Graph generates for the reply, never
+// substituted for them.
 //
 // QuoteTimeLocation, when set, rewrites an HTML draft's quoted "Sent:" line
 // in that zone using Outlook on the web's layout; nil leaves Graph's UTC
@@ -45,6 +47,8 @@ type CreateReplyDraftOptions struct {
 	IsHTML            bool
 	InlineAttachments []InlineAttachmentInput
 	QuoteTimeLocation *time.Location
+	Cc                []string
+	Bcc               []string
 }
 
 const (
@@ -85,8 +89,9 @@ func HTMLReferencesInlineContentID(body, contentID string) bool {
 
 // CreateReplyDraft creates a real Outlook reply draft in the target mailbox,
 // or in the signed-in user's own mailbox when target is empty. Plain drafts use
-// Graph's comment form. HTML drafts first let Graph generate Outlook's quoted
-// history, then insert the supplied fragment into that generated HTML body.
+// Graph's comment form, rendered as HTML when the original is HTML. HTML drafts
+// first let Graph generate Outlook's quoted history, then insert the supplied
+// fragment into that generated HTML body.
 func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string, opts *CreateReplyDraftOptions) (*DraftMessage, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
@@ -94,7 +99,8 @@ func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string,
 	if err := validateID(messageID, "message ID"); err != nil {
 		return nil, err
 	}
-	if err := validateCreateReplyDraftOptions(opts); err != nil {
+	err := validateCreateReplyDraftOptions(opts)
+	if err != nil {
 		return nil, err
 	}
 
@@ -103,7 +109,14 @@ func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string,
 		action = "creating reply-all draft"
 	}
 
-	result, err := c.createReplyDraft(ctx, target, messageID, opts, action)
+	createOpts := *opts
+	if !opts.IsHTML {
+		createOpts.Body, err = c.plainComment(ctx, target, messageID, opts.Body, replyDraftKind)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, err := c.createReplyDraft(ctx, target, messageID, &createOpts, action)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +129,11 @@ func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string,
 		return nil, fmt.Errorf("%s: Graph returned a draft without an ID", action)
 	}
 	if !opts.IsHTML {
-		draft := convertDraft(result)
-		return &draft, nil
+		draft, err := c.finishPlainReplyDraft(ctx, target, draftID, result, opts)
+		if err != nil {
+			return nil, c.cleanupFailedDraft(ctx, target, draftID, replyDraftKind, err)
+		}
+		return draft, nil
 	}
 
 	draft, err := c.finishHTMLReplyDraft(ctx, target, messageID, draftID, result, opts, replyDraftKind)
@@ -136,6 +152,11 @@ func validateCreateReplyDraftOptions(opts *CreateReplyDraftOptions) error {
 	}
 	if opts.IsHTML && htmlDocumentTagPattern.MatchString(opts.Body) {
 		return fmt.Errorf("HTML draft body must be a fragment, not a complete html or body document")
+	}
+	for _, addr := range append(append([]string{}, opts.Cc...), opts.Bcc...) {
+		if err := ValidateEmail(addr); err != nil {
+			return err
+		}
 	}
 	return validateInlineAttachments(opts.Body, opts.IsHTML, opts.InlineAttachments)
 }
@@ -241,7 +262,14 @@ func (c *Client) finishHTMLReplyDraft(
 	}
 	combinedHTML := generatedHTML[:insertionIndex] + opts.Body + generatedHTML[insertionIndex:]
 	subject := outlookWebReplySubject(derefStr(generated.GetSubject()))
-	updated, err := c.patchReplyDraftHTML(ctx, target, draftID, subject, combinedHTML, kind)
+	patch := htmlMessageBody(combinedHTML)
+	if subject != "" {
+		patch.SetSubject(&subject)
+	}
+	if err := addReplyRecipients(patch, generated, opts); err != nil {
+		return nil, err
+	}
+	updated, err := c.patchReplyDraft(ctx, target, draftID, patch, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -254,6 +282,12 @@ func (c *Client) finishHTMLReplyDraft(
 
 	draft := convertDraft(updated)
 	createdDraft := convertDraft(generated)
+	if patch.GetCcRecipients() != nil {
+		createdDraft.Cc = recipientAddresses(patch.GetCcRecipients())
+	}
+	if patch.GetBccRecipients() != nil {
+		createdDraft.Bcc = recipientAddresses(patch.GetBccRecipients())
+	}
 	if draft.ID == "" {
 		draft.ID = draftID
 	}
@@ -301,14 +335,10 @@ func (c *Client) getReplyDraftHTML(ctx context.Context, target, draftID, kind st
 	return result, nil
 }
 
-func (c *Client) patchReplyDraftHTML(ctx context.Context, target, draftID, subject, content, kind string) (models.Messageable, error) {
+func (c *Client) patchReplyDraft(ctx context.Context, target, draftID string, message models.Messageable, kind string) (models.Messageable, error) {
 	action := "formatting " + kind
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
-	}
-	message := htmlMessageBody(content)
-	if subject != "" {
-		message.SetSubject(&subject)
 	}
 	result, err := c.targetUser(target).Messages().ByMessageId(draftID).Patch(ctx, message, nil)
 	if err != nil {

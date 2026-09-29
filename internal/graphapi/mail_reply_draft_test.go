@@ -61,7 +61,7 @@ func TestCreateReplyDraftRoutesFormatsAndPreservesHistory(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				calls++
 				switch calls {
 				case 1:
@@ -133,7 +133,7 @@ func TestCreateReplyDraftRoutesFormatsAndPreservesHistory(t *testing.T) {
 }
 
 func TestCreateReplyDraftNormalizesGraphReplySubjectForHTML(t *testing.T) {
-	client := testGraphClient(t, func(req *http.Request) *http.Response {
+	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		switch req.Method {
 		case http.MethodPost:
 			return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","body":{"contentType":"html","content":`+quotedJSON(generatedReplyHTML)+`}}`)
@@ -174,7 +174,7 @@ func TestCreateReplyDraftNormalizesGraphReplySubjectForHTML(t *testing.T) {
 func TestCreateReplyDraftFetchesGeneratedHTMLWhenActionOmitsBody(t *testing.T) {
 	wantBody := strings.Replace(generatedReplyHTML, `<body class="reply">`, `<body class="reply"><p>Thanks</p>`, 1)
 	var requests []string
-	client := testGraphClient(t, func(req *http.Request) *http.Response {
+	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		requests = append(requests, req.Method+" "+req.URL.Path)
 		switch len(requests) {
 		case 1:
@@ -241,7 +241,7 @@ func TestCreateReplyDraftValidatesBeforeGraph(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				calls++
 				t.Fatalf("unexpected Graph request during validation: %s %s", req.Method, req.URL.Path)
 				return graphEmptyResponse(req)
@@ -267,7 +267,7 @@ func TestCreateReplyDraftCapabilityGuards(t *testing.T) {
 	}
 
 	calls := 0
-	noSend := testGraphClient(t, func(req *http.Request) *http.Response {
+	noSend := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		calls++
 		return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Subject"}`)
 	})
@@ -279,7 +279,7 @@ func TestCreateReplyDraftCapabilityGuards(t *testing.T) {
 		t.Fatalf("CreateReplyDraft Graph requests under --no-send = %d, want 1", calls)
 	}
 
-	if err := noSend.ReplyMessage(ctx, "", "AAA", "Thanks", false, false); !errors.Is(err, ErrNoSend) {
+	if err := noSend.ReplyMessage(ctx, "", "AAA", &ReplyOptions{Body: "Thanks"}); !errors.Is(err, ErrNoSend) {
 		t.Fatalf("immediate ReplyMessage under --no-send = %v, want ErrNoSend", err)
 	}
 }
@@ -308,7 +308,7 @@ func TestCreateReplyDraftDelegatedErrors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				return replyDraftErrorResponse(req, tc.status, tc.code, tc.message)
 			})
 
@@ -435,7 +435,7 @@ func TestCreateReplyDraftReportsRecipientsFromThePatchedDraft(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				switch req.Method {
 				case http.MethodPost:
 					return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject",`+generatedReplyRecipients+

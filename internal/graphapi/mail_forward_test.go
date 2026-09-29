@@ -43,7 +43,7 @@ func TestForwardMessageCarriesCcInsideTheMessage(t *testing.T) {
 	for _, html := range []bool{false, true} {
 		t.Run(map[bool]string{false: "plain", true: "HTML"}[html], func(t *testing.T) {
 			var payload forwardPayload
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				if !strings.HasSuffix(req.URL.Path, "/messages/AAA/forward") {
 					t.Errorf("request path = %q, want the forward action", req.URL.Path)
 				}
@@ -95,7 +95,7 @@ func TestCreateForwardDraftRoutesAndKeepsTheForwardedOriginal(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				calls++
 				switch calls {
 				case 1:
@@ -160,7 +160,7 @@ func TestCreateForwardDraftGuardsAndValidation(t *testing.T) {
 		t.Errorf("--no-write error = %v, want ErrNoWrite", err)
 	}
 
-	noSend := testGraphClient(t, func(req *http.Request) *http.Response {
+	noSend := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		return graphJSONResponse(req, `{"id":"draft-id","subject":"FW: Original subject"}`)
 	})
 	noSend.SetGuards(false, true)
@@ -168,7 +168,7 @@ func TestCreateForwardDraftGuardsAndValidation(t *testing.T) {
 		t.Errorf("--no-send blocked a forward draft, which sends nothing: %v", err)
 	}
 
-	unused := testGraphClient(t, func(req *http.Request) *http.Response {
+	unused := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		t.Fatalf("invalid input reached Graph: %s %s", req.Method, req.URL.Path)
 		return nil
 	})
@@ -185,7 +185,7 @@ func TestCreateForwardDraftGuardsAndValidation(t *testing.T) {
 
 func TestCreateForwardDraftCleanupNamesAForwardDraft(t *testing.T) {
 	calls := 0
-	client := testGraphClient(t, func(req *http.Request) *http.Response {
+	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		calls++
 		switch req.Method {
 		case http.MethodPost:
