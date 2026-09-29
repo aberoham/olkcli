@@ -54,7 +54,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "team@example.com",
 			want:   "/v1.0/users/team@example.com/messages/AAA/reply",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", false, false)
+				return c.ReplyMessage(ctx, target, "AAA", &ReplyOptions{Body: "body"})
 			},
 		},
 		{
@@ -62,7 +62,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "team@example.com",
 			want:   "/v1.0/users/team@example.com/messages/AAA/replyAll",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", true, false)
+				return c.ReplyMessage(ctx, target, "AAA", &ReplyOptions{Body: "body", ReplyAll: true})
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "",
 			want:   meBuilderPath + "/messages/AAA/reply",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", false, false)
+				return c.ReplyMessage(ctx, target, "AAA", &ReplyOptions{Body: "body"})
 			},
 		},
 		{
@@ -94,7 +94,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 			target: "",
 			want:   meBuilderPath + "/messages/AAA/replyAll",
 			call: func(c *Client, ctx context.Context, target string) error {
-				return c.ReplyMessage(ctx, target, "AAA", "body", true, false)
+				return c.ReplyMessage(ctx, target, "AAA", &ReplyOptions{Body: "body", ReplyAll: true})
 			},
 		},
 		{
@@ -137,7 +137,7 @@ func TestDelegatedWritesAddressTheTargetMailbox(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got string
 			calls := 0
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				// Sending checks that the ID is a draft, in the same mailbox,
 				// before the write this test is about.
 				if req.Method == http.MethodGet {
@@ -287,7 +287,7 @@ func TestGraphErrorHelpersStayUnwrappable(t *testing.T) {
 
 func TestMoveMessageAddressesDelegatedTarget(t *testing.T) {
 	var gotPath string
-	client := testGraphClient(t, func(req *http.Request) *http.Response {
+	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		gotPath = req.URL.Path
 		return graphJSONResponse(req, `{"id":"moved-id"}`)
 	})
@@ -313,7 +313,7 @@ func TestMoveMessageAddressesDelegatedTarget(t *testing.T) {
 // carries the move grants rather than the sending ones.
 func TestMoveMessageInSharedMailboxExplainsRefusal(t *testing.T) {
 	code, message := "ErrorAccessDenied", "Access is denied. Check credentials and try again."
-	client := testGraphClient(t, func(req *http.Request) *http.Response {
+	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		return replyDraftErrorResponse(req, http.StatusForbidden, code, message)
 	})
 	_, err := client.MoveMessage(context.Background(), "team@example.com", "message-id", "folder-id")
@@ -344,7 +344,7 @@ func TestDeleteMessageAddressesTheRequestedMailbox(t *testing.T) {
 	} {
 		t.Run("target="+tc.target, func(t *testing.T) {
 			var gotPath, gotMethod string
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				gotPath, gotMethod = req.URL.Path, req.Method
 				return graphEmptyResponse(req)
 			})
@@ -360,7 +360,7 @@ func TestDeleteMessageAddressesTheRequestedMailbox(t *testing.T) {
 
 func TestDeleteMessageInSharedMailboxExplainsRefusal(t *testing.T) {
 	code, message := "ErrorAccessDenied", "Access is denied. Check credentials and try again."
-	client := testGraphClient(t, func(req *http.Request) *http.Response {
+	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 		return replyDraftErrorResponse(req, http.StatusForbidden, code, message)
 	})
 	err := client.DeleteMessage(context.Background(), "team@example.com", "message-id")

@@ -38,7 +38,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 			name: "plain reply keeps comment payload",
 			path: "/reply",
 			call: func(c *Client) error {
-				return c.ReplyMessage(context.Background(), "", "message-id", "Reply body", false, false)
+				return c.ReplyMessage(context.Background(), "", "message-id", &ReplyOptions{Body: "Reply body"})
 			},
 		},
 		{
@@ -46,7 +46,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 			path: "/reply",
 			html: true,
 			call: func(c *Client) error {
-				return c.ReplyMessage(context.Background(), "", "message-id", "<p>Reply body</p>", false, true)
+				return c.ReplyMessage(context.Background(), "", "message-id", &ReplyOptions{Body: "<p>Reply body</p>", IsHTML: true})
 			},
 		},
 		{
@@ -54,7 +54,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 			path: "/replyAll",
 			html: true,
 			call: func(c *Client) error {
-				return c.ReplyMessage(context.Background(), "", "message-id", "<p>Reply body</p>", true, true)
+				return c.ReplyMessage(context.Background(), "", "message-id", &ReplyOptions{Body: "<p>Reply body</p>", ReplyAll: true, IsHTML: true})
 			},
 		},
 		{
@@ -79,7 +79,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var payload replyActionPayload
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
+			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
 				if !strings.HasSuffix(req.URL.Path, tc.path) {
 					t.Errorf("request path = %q, want suffix %q", req.URL.Path, tc.path)
 				}
