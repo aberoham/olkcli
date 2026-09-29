@@ -29,8 +29,14 @@ func useNamespace(t *testing.T, ns string) {
 
 func TestItemLabelNamesTheBuildNamespace(t *testing.T) {
 	useNamespace(t, "olk-dev")
-	if got, want := ItemLabel(TokenKey("someone@example.com")), "olk-dev token for someone@example.com"; got != want {
-		t.Fatalf("ItemLabel = %q, want %q", got, want)
+	tests := []struct{ key, want string }{
+		{TokenKey("someone@example.com"), "olk-dev token for someone@example.com"},
+		{"olk:other", "olk-dev olk:other"},
+	}
+	for _, tc := range tests {
+		if got := ItemLabel(tc.key); got != tc.want {
+			t.Fatalf("ItemLabel(%q) = %q, want %q", tc.key, got, tc.want)
+		}
 	}
 }
 
