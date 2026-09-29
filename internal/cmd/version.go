@@ -59,7 +59,7 @@ func (c *VersionCmd) Run(ctx *RunContext) error {
 	}
 	fmt.Printf("olk %s (commit: %s, built: %s)\n", Version, Commit, Date)
 	if config.Namespace != config.DefaultNamespace {
-		fmt.Printf("namespace: %s (separate accounts and tokens from installed olk)\n", config.Namespace)
+		fmt.Printf("namespace: %s\n", config.Namespace)
 	}
 	return nil
 }

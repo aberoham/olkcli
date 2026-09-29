@@ -16,10 +16,12 @@ die() {
 	exit 1
 }
 
-[[ "$(uname -s)" == Darwin ]] || die "this creates a macOS keychain certificate; nothing to do on $(uname -s)."
+[[ "$(uname -s)" == Darwin ]] ||
+	die "this creates a macOS keychain certificate; nothing to do on $(uname -s)."
 command -v openssl >/dev/null || die "openssl not found. Install it with: brew install openssl"
 if security find-certificate -c "$name" "$keychain" >/dev/null 2>&1; then
-	die "a certificate named '$name' already exists. Use it with OLK_CODESIGN_IDENTITY='$name', or pass another name."
+	die "a certificate named '$name' already exists." \
+		"Use it with OLK_CODESIGN_IDENTITY='$name', or pass another name."
 fi
 
 workdir="$(mktemp -d)"
@@ -39,21 +41,24 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
 
 # The bundle only carries the key into the keychain, so its password is
 # throwaway. OpenSSL 3 needs -legacy for encryption that `security` can read;
-# LibreSSL, which macOS ships as /usr/bin/openssl, has no such flag.
+# LibreSSL, which macOS ships as /usr/bin/openssl, has no such flag. The
+# guarded expansion below keeps an empty array legal under bash 3.2 and set -u.
 legacy=()
 if openssl version | grep -q '^OpenSSL 3'; then
 	legacy=(-legacy)
 fi
 bundle_password="$(openssl rand -hex 16)"
-openssl pkcs12 -export "${legacy[@]}" -name "$name" \
+openssl pkcs12 -export ${legacy[@]+"${legacy[@]}"} -name "$name" \
 	-inkey "$workdir/key.pem" -in "$workdir/cert.pem" \
 	-out "$workdir/identity.p12" -passout "pass:$bundle_password" ||
 	die "openssl could not bundle the key and certificate."
 
-security import "$workdir/identity.p12" -k "$keychain" -P "$bundle_password" -T /usr/bin/codesign ||
+security import "$workdir/identity.p12" -k "$keychain" -P "$bundle_password" \
+	-T /usr/bin/codesign ||
 	die "security import failed; is the login keychain unlocked?"
 security add-trusted-cert -r trustRoot -p codeSign -k "$keychain" "$workdir/cert.pem" ||
-	die "the certificate was imported but not trusted. Trust '$name' for code signing in Keychain Access."
+	die "the certificate was imported but not trusted." \
+		"Trust '$name' for code signing in Keychain Access."
 
 printf "Created '%s'. Sign development builds with:\n" "$name"
 printf "  OLK_CODESIGN_IDENTITY='%s' make build sign\n" "$name"
