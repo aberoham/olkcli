@@ -47,7 +47,11 @@ func TestMailReplyDraftCommandPlainRoutesAndReportsDraft(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			output, calls, err := runMailCommand(t, []string{"mail", "reply"}, tc.args, func(req *http.Request) *http.Response {
 				if req.Method == http.MethodGet && req.URL.Path == tc.wantPath[:strings.LastIndex(tc.wantPath, "/")] {
-					return graphJSONResponse(req, `{"body":{"contentType":"`+tc.originalType+`","content":"original"}}`)
+					value := "1"
+					if tc.originalType == "html" {
+						value = "3"
+					}
+					return graphJSONResponse(req, `{"singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"`+value+`"}]}`)
 				}
 				if req.Method != http.MethodPost || req.URL.Path != tc.wantPath {
 					t.Fatalf("request = %s %s, want POST %s", req.Method, req.URL.Path, tc.wantPath)
@@ -62,7 +66,7 @@ func TestMailReplyDraftCommandPlainRoutesAndReportsDraft(t *testing.T) {
 				if payload.Comment == nil || *payload.Comment != tc.wantComment || payload.Message != nil {
 					t.Fatalf("plain reply payload = %#v, want exact comment only", payload)
 				}
-				return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+				return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject","singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"1"}]}`)
 			})
 			if err != nil {
 				t.Fatalf("mail reply --draft: %v", err)
@@ -84,7 +88,7 @@ func TestMailReplyDraftCommandJSONOutputsTheDraft(t *testing.T) {
 	output, calls, err := runMailCommand(t, []string{"mail", "reply"}, []string{
 		"AAA", "--body", "Thanks", "--draft", "--json",
 	}, func(req *http.Request) *http.Response {
-		return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+		return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject","singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"1"}]}`)
 	})
 	if err != nil {
 		t.Fatalf("mail reply --draft --json: %v", err)
@@ -287,7 +291,7 @@ func TestMailReplyDraftCommandCapabilityGuards(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			_, calls, err := runGuardedMailReplyCommand(t, tc.args, func(req *http.Request) *http.Response {
-				return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Subject"}`)
+				return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Subject","singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"1"}]}`)
 			})
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("command error = %v, want %v", err, tc.wantErr)
@@ -383,7 +387,7 @@ func TestMailReplyDraftCommandWritesTheQuotedSentLineInTheDisplayZone(t *testing
 			if payload.Body.Content != wantCombined {
 				t.Fatalf("patched body =\n%s\nwant\n%s", payload.Body.Content, wantCombined)
 			}
-			return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
+			return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject","singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"1"}]}`)
 		default:
 			t.Fatalf("unexpected Graph request %d: %s %s", call, req.Method, req.URL.Path)
 			return graphJSONResponse(req, `{}`)
@@ -414,7 +418,7 @@ func TestMailReplyDraftCommandChecksTheTimeZoneOnlyForHTML(t *testing.T) {
 	_, _, err = runMailCommand(t, []string{"mail", "reply"}, []string{
 		"AAA", "--body", "Thanks", "--draft", "--tz", "Invalid/Zone",
 	}, func(req *http.Request) *http.Response {
-		return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject"}`)
+		return graphJSONResponse(req, `{"id":"draft-id","subject":"RE: Original subject","singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"1"}]}`)
 	})
 	if err != nil {
 		t.Fatalf("plain draft with an unused invalid zone: %v", err)

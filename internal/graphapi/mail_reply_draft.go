@@ -49,6 +49,10 @@ type CreateReplyDraftOptions struct {
 	QuoteTimeLocation *time.Location
 	Cc                []string
 	Bcc               []string
+
+	// replaceBody preserves direct-send HTML semantics for immediate replies.
+	// Explicit drafts instead insert a fragment ahead of generated history.
+	replaceBody bool
 }
 
 const (
@@ -128,8 +132,8 @@ func (c *Client) CreateReplyDraft(ctx context.Context, target, messageID string,
 	if draftID == "" {
 		return nil, fmt.Errorf("%s: Graph returned a draft without an ID", action)
 	}
-	if !opts.IsHTML {
-		draft, err := c.finishPlainReplyDraft(ctx, target, draftID, result, opts)
+	if !opts.IsHTML || opts.replaceBody {
+		draft, err := c.finishReplyDraftRecipients(ctx, target, draftID, result, opts)
 		if err != nil {
 			return nil, c.cleanupFailedDraft(ctx, target, draftID, replyDraftKind, err)
 		}
@@ -150,7 +154,7 @@ func validateCreateReplyDraftOptions(opts *CreateReplyDraftOptions) error {
 	if len(opts.InlineAttachments) > 0 && !opts.IsHTML {
 		return fmt.Errorf("inline attachments require an HTML reply draft")
 	}
-	if opts.IsHTML && htmlDocumentTagPattern.MatchString(opts.Body) {
+	if opts.IsHTML && !opts.replaceBody && htmlDocumentTagPattern.MatchString(opts.Body) {
 		return fmt.Errorf("HTML draft body must be a fragment, not a complete html or body document")
 	}
 	for _, addr := range append(append([]string{}, opts.Cc...), opts.Bcc...) {
@@ -209,6 +213,14 @@ func (c *Client) createReplyDraft(
 		err    error
 	)
 	switch {
+	case opts.replaceBody && opts.ReplyAll:
+		body := users.NewItemMessagesItemCreateReplyAllPostRequestBody()
+		body.SetMessage(htmlMessageBody(opts.Body))
+		result, err = message.CreateReplyAll().Post(ctx, body, nil)
+	case opts.replaceBody:
+		body := users.NewItemMessagesItemCreateReplyPostRequestBody()
+		body.SetMessage(htmlMessageBody(opts.Body))
+		result, err = message.CreateReply().Post(ctx, body, nil)
 	case opts.ReplyAll && opts.IsHTML:
 		result, err = message.CreateReplyAll().Post(ctx, nil, nil)
 	case opts.ReplyAll:

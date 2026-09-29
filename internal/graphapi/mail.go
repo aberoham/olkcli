@@ -609,11 +609,12 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID string, opt
 
 func (c *Client) replyThroughDraft(ctx context.Context, target, messageID string, opts *ReplyOptions) error {
 	draft, err := c.CreateReplyDraft(ctx, target, messageID, &CreateReplyDraftOptions{
-		Body:     opts.Body,
-		ReplyAll: opts.ReplyAll,
-		IsHTML:   opts.IsHTML,
-		Cc:       opts.Cc,
-		Bcc:      opts.Bcc,
+		replaceBody: opts.IsHTML,
+		Body:        opts.Body,
+		ReplyAll:    opts.ReplyAll,
+		IsHTML:      opts.IsHTML,
+		Cc:          opts.Cc,
+		Bcc:         opts.Bcc,
 	})
 	if err != nil {
 		return err

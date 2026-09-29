@@ -113,13 +113,18 @@ inserts the comment into an HTML reply as markup, so when the original message
 is HTML, `olk` escapes the text and writes each line as a `<div>`, each blank
 line as `<div><br></div>`, and leading or repeated spaces as `&nbsp;` so
 indented excerpts keep their columns. A comment on a plain-text original is sent
-as written. Deciding costs one read of the original message's body type.
+as written. Deciding costs one read of Outlook's native-body format metadata
+(not the message body). Missing or unsupported formats fail with an explicit error; use `--html`
+with explicitly formatted content in that case. Plain replies and forwards need
+mail read access, including `Mail.Read.Shared` for a delegated mailbox.
 
 `--cc` and `--bcc` on `mail reply` add recipients to those Outlook generates for
 the reply or reply-all; they do not replace them, and an address already
 present is not repeated. A reply that is sent at once with added recipients is
 created as a draft, extended, and then sent, so it also needs write access to
-the mailbox and is refused under `--no-write`.
+the mailbox and is refused under `--no-write`. Immediate HTML replies accept
+complete HTML documents with or without added recipients; explicit `--draft`
+HTML bodies must still be fragments to insert ahead of the quoted history.
 
 `mail forward --draft` does the same for a forward: Outlook generates the
 forwarded original, an HTML comment is inserted ahead of it, and the draft is
