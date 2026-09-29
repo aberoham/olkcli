@@ -16,11 +16,16 @@ BINARY   = ./bin/olk
 # namespace, olk.
 NAMESPACE ?= olk-dev
 
-.PHONY: build test lint install clean version
+.PHONY: build sign test lint install clean version
 
 build:
 	go build -ldflags '$(LDFLAGS) -X $(MODULE)/internal/config.Namespace=$(NAMESPACE)' \
 		-o $(BINARY) ./cmd/olk
+
+# Sign bin/olk with OLK_CODESIGN_IDENTITY so macOS keeps its Keychain grant
+# across rebuilds (macOS only). See docs/development.md.
+sign:
+	scripts/macos-dev-sign.sh $(BINARY)
 
 test:
 	go test -race -count=1 ./...
