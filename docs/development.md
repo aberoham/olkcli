@@ -19,6 +19,11 @@ go vet ./...
 go mod verify
 ```
 
+`make build` produces `bin/olk` in the `olk-dev` storage namespace, with its
+own config directory and credential-store entries; sign in once with
+`./bin/olk auth login`. `make install` and release builds use `olk`. Override
+with `make build NAMESPACE=<name>`.
+
 New tests should pass `go test -race -count=1 ./...`. Graph-wrapper changes
 should include fixture tests for request projections and converted output.
 
