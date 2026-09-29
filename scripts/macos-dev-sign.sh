@@ -30,7 +30,8 @@ if [[ -z "$identity" ]]; then
 	die "set OLK_CODESIGN_IDENTITY to one of the names or SHA-1 hashes above, or create a local certificate with scripts/macos-dev-cert.sh."
 fi
 
-identities="$(security find-identity -v -p codesigning)"
+identities="$(security find-identity -v -p codesigning)" ||
+	die "security find-identity failed; unlock the login keychain and run make sign again."
 if ! grep -qF -- "$identity" <<<"$identities"; then
 	die "no valid code-signing identity matches '$identity'. List them with: security find-identity -v -p codesigning"
 fi
@@ -56,4 +57,6 @@ codesign --verify --strict "$binary" ||
 
 printf 'Signed %s (namespace %s) as %s.\n' "$binary" "$namespace" "$identifier"
 printf 'Keychain grants match this designated requirement:\n'
-codesign -d -r- "$binary" 2>&1 | sed -n 's/^designated => /  /p'
+requirement="$(codesign -d -r- "$binary" 2>&1)" ||
+	die "the binary is signed, but codesign could not display its designated requirement: $requirement"
+sed -n 's/^designated => /  /p' <<<"$requirement"
