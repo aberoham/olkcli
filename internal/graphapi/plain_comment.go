@@ -13,13 +13,14 @@ import (
 // plainTextHTML renders plain text as an HTML fragment that keeps its line
 // structure. Each line becomes a div and each blank line an empty div holding
 // a break, which is the markup Outlook on the web writes for typed text, so
-// the spacing survives stylesheets that zero paragraph margins. Leading
-// spaces, and every space that follows another, become non-breaking so that
-// indented excerpts keep their columns.
+// the spacing survives stylesheets that zero paragraph margins. Leading and
+// trailing spaces, and every space that follows another, become non-breaking
+// so that indented excerpts keep their columns. One final line terminator is
+// treated as ending the last line; any further blank lines are kept.
 func plainTextHTML(text string) string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
-	text = strings.TrimRight(text, "\n")
+	text = strings.TrimSuffix(text, "\n")
 	if text == "" {
 		return ""
 	}
@@ -53,6 +54,9 @@ func preserveSpaces(escaped string) string {
 			out.WriteRune(r)
 			previousSpace = false
 		}
+	}
+	if result, found := strings.CutSuffix(out.String(), " "); found {
+		return result + "&nbsp;"
 	}
 	return out.String()
 }

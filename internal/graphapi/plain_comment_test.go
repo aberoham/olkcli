@@ -14,15 +14,17 @@ func TestPlainTextHTMLKeepsLinesBlankLinesAndIndentation(t *testing.T) {
 		want string
 	}{
 		"empty":                 {"", ""},
-		"only line terminators": {"\n\r\n", ""},
+		"only line terminators": {"\n\r\n", "<div><br></div><div><br></div>"},
 		"single line":           {"Thanks", "<div>Thanks</div>"},
 		"paragraphs": {
 			"First paragraph\nstill first\n\nSecond paragraph",
 			"<div>First paragraph</div><div>still first</div><div><br></div><div>Second paragraph</div>",
 		},
-		"CRLF and bare CR":   {"one\r\ntwo\rthree", "<div>one</div><div>two</div><div>three</div>"},
-		"trailing newlines":  {"end\n\n", "<div>end</div>"},
-		"leading blank line": {"\nafter", "<div><br></div><div>after</div>"},
+		"CRLF and bare CR":    {"one\r\ntwo\rthree", "<div>one</div><div>two</div><div>three</div>"},
+		"one line terminator": {"end\n", "<div>end</div>"},
+		"trailing blank line": {"end\n\n", "<div>end</div><div><br></div>"},
+		"trailing space":      {"end ", "<div>end&nbsp;</div>"},
+		"leading blank line":  {"\nafter", "<div><br></div><div>after</div>"},
 		"indented log excerpt": {
 			"Log:\n    2026-09-29 ERROR  tunnel down",
 			"<div>Log:</div><div>&nbsp;&nbsp;&nbsp;&nbsp;2026-09-29 ERROR &nbsp;tunnel down</div>",
@@ -179,8 +181,8 @@ func TestReplyDraftAddsCcAndBccToTheGeneratedRecipients(t *testing.T) {
 			})
 			draft, err := client.CreateReplyDraft(context.Background(), "", "AAA", &CreateReplyDraftOptions{
 				Body: "Thanks", ReplyAll: true, IsHTML: html,
-				Cc:  []string{"added@example.com", "COPIED@example.com"},
-				Bcc: []string{"audit@example.com"},
+				Cc:  []string{"added@example.com", "COPIED@example.com", "Person@example.com", "added@example.com"},
+				Bcc: []string{"audit@example.com", "ADDED@example.com"},
 			})
 			if err != nil {
 				t.Fatalf("CreateReplyDraft: %v", err)

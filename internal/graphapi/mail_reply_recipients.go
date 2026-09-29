@@ -11,18 +11,27 @@ import (
 // addReplyRecipients sets on patch the Cc and Bcc lists that result from
 // adding the caller's addresses to those Graph generated for the reply. A
 // PATCH replaces a recipient list outright, so each list is written in full:
-// the generated recipients first, then each added address not already
-// present. A list with nothing to add is left out of the PATCH.
+// the generated recipients first, then each added address that is not already
+// on any of the reply's lists. A list with nothing to add is left out of the
+// PATCH.
 func addReplyRecipients(patch, generated models.Messageable, opts *CreateReplyDraftOptions) error {
+	present := make(map[string]struct{})
+	for _, list := range [][]models.Recipientable{
+		generated.GetToRecipients(), generated.GetCcRecipients(), generated.GetBccRecipients(),
+	} {
+		for _, recipient := range list {
+			present[strings.ToLower(recipientAddress(recipient))] = struct{}{}
+		}
+	}
 	if len(opts.Cc) > 0 {
-		cc, err := withAddedRecipients(generated.GetCcRecipients(), opts.Cc, "Cc")
+		cc, err := withAddedRecipients(generated.GetCcRecipients(), opts.Cc, "Cc", present)
 		if err != nil {
 			return err
 		}
 		patch.SetCcRecipients(cc)
 	}
 	if len(opts.Bcc) > 0 {
-		bcc, err := withAddedRecipients(generated.GetBccRecipients(), opts.Bcc, "Bcc")
+		bcc, err := withAddedRecipients(generated.GetBccRecipients(), opts.Bcc, "Bcc", present)
 		if err != nil {
 			return err
 		}
@@ -31,10 +40,16 @@ func addReplyRecipients(patch, generated models.Messageable, opts *CreateReplyDr
 	return nil
 }
 
-// withAddedRecipients refuses to proceed when Graph omitted the generated
-// list, because writing only the added addresses would silently drop the
-// recipients a reply-all is meant to reach.
-func withAddedRecipients(generated []models.Recipientable, added []string, label string) ([]models.Recipientable, error) {
+// withAddedRecipients appends to generated each added address not yet in
+// present, recording it there. It refuses to proceed when Graph omitted the
+// generated list, because writing only the added addresses would silently
+// drop the recipients a reply-all is meant to reach.
+func withAddedRecipients(
+	generated []models.Recipientable,
+	added []string,
+	label string,
+	present map[string]struct{},
+) ([]models.Recipientable, error) {
 	if generated == nil {
 		return nil, fmt.Errorf("adding %s recipients: Graph did not report the reply's generated %s list, so it cannot be extended safely", label, label)
 	}
@@ -42,14 +57,13 @@ func withAddedRecipients(generated []models.Recipientable, added []string, label
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s recipient: %w", strings.ToLower(label), err)
 	}
-	seen := make(map[string]struct{}, len(generated)+len(extra))
-	merged := make([]models.Recipientable, 0, len(generated)+len(extra))
-	for _, recipient := range append(append([]models.Recipientable{}, generated...), extra...) {
+	merged := append(make([]models.Recipientable, 0, len(generated)+len(extra)), generated...)
+	for _, recipient := range extra {
 		key := strings.ToLower(recipientAddress(recipient))
-		if _, exists := seen[key]; exists && key != "" {
+		if _, exists := present[key]; exists {
 			continue
 		}
-		seen[key] = struct{}{}
+		present[key] = struct{}{}
 		merged = append(merged, recipient)
 	}
 	return merged, nil
