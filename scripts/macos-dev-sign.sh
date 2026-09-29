@@ -32,10 +32,14 @@ fi
 
 identities="$(security find-identity -v -p codesigning)" ||
 	die "security find-identity failed; unlock the login keychain and run make sign again."
-# Match the whole quoted name or the whole hash, so a prefix such as "olk"
-# cannot pass here and then be ambiguous to codesign.
-if ! grep -qF -- "\"$identity\"" <<<"$identities" &&
-	! grep -qiF -- ") $identity " <<<"$identities"; then
+# Match the whole hash field or the whole quoted name, so a prefix such as
+# "olk" cannot pass here and then be ambiguous to codesign.
+if [[ "$identity" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+	match=(grep -qiE -- "^ *[0-9]+\) $identity ")
+else
+	match=(grep -qF -- "\"$identity\"")
+fi
+if ! "${match[@]}" <<<"$identities"; then
 	die "no valid code-signing identity matches '$identity'. List them with: security find-identity -v -p codesigning"
 fi
 
