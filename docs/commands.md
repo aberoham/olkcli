@@ -83,9 +83,10 @@ well-known name such as `inbox`, or a slash-separated display-name path, resolve
 in the target mailbox the way `mail move` resolves its destination. A single
 display name is not a path; use the folder's ID or its full path. A folder name
 cannot contain `/`, because such a folder could not be addressed by path
-afterwards. Rename and delete refuse the well-known folders `inbox`, `archive`,
-`deleteditems` and `junkemail`. `--dry-run` prints the mailbox and the parent as
-typed without contacting Graph, so it does not confirm that the parent exists.
+afterwards. Rename and delete refuse the well-known names `inbox`, `archive`,
+`deleteditems` and `junkemail`; a folder addressed by its ID is not checked
+against them and is left to Graph. `--dry-run` prints the mailbox and the parent
+as typed without contacting Graph, so it does not confirm that the parent exists.
 
 To edit an existing draft without sending it:
 

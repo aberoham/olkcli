@@ -179,7 +179,8 @@ can be ambiguous, so use either its ID or its full path.
 `mail folders create`, `rename` and `delete` honour `--mailbox` and need
 `Mail.ReadWrite.Shared` plus Full Access there. Create makes a top-level folder
 unless `--parent` is given. A folder name cannot contain `/`. Rename and delete
-refuse `inbox`, `archive`, `deleteditems` and `junkemail`. `--dry-run` names the
+refuse the well-known names `inbox`, `archive`, `deleteditems` and `junkemail`;
+a folder addressed by ID is not checked against them. `--dry-run` names the
 mailbox and the parent as typed without contacting Graph, so it does not confirm
 that the parent exists.
 

@@ -101,6 +101,21 @@ func mailboxSuffix(preposition, target string) string {
 	return " " + preposition + " " + target
 }
 
+// explainUnresolvedFolderPath annotates a failed folder write whose reference
+// was passed to Graph unchanged. The resolver leaves a slash-bearing value alone
+// when its first component names no top-level folder, because a Graph ID may
+// itself contain a slash, so a mistyped path would otherwise surface only as
+// Graph's complaint about a malformed ID.
+func explainUnresolvedFolderPath(reference, resolved string, err error) error {
+	if err == nil || resolved != reference || !strings.Contains(reference, "/") {
+		return err
+	}
+	first, _, _ := strings.Cut(reference, "/")
+	return fmt.Errorf("%w\n\n%q was sent to Graph as a folder ID because %q does not name a top-level folder "+
+		"in that mailbox. If it was meant as a path, check its first component",
+		err, outfmt.Sanitize(reference), outfmt.Sanitize(first))
+}
+
 // MailFoldersCreateCmd creates a new mail folder
 type MailFoldersCreateCmd struct {
 	Name   string `help:"Folder name" required:"" short:"n"`
@@ -141,7 +156,7 @@ func (c *MailFoldersCreateCmd) Run(ctx *RunContext) error {
 	}
 	folder, err := client.CreateMailFolder(ctx.Ctx, target, parentID, c.Name)
 	if err != nil {
-		return err
+		return explainUnresolvedFolderPath(c.Parent, parentID, err)
 	}
 
 	fmt.Printf("Folder created%s: %s (ID: %s)\n", mailboxSuffix("in", target),
@@ -181,7 +196,7 @@ func (c *MailFoldersRenameCmd) Run(ctx *RunContext) error {
 	}
 	folder, err := client.RenameMailFolder(ctx.Ctx, target, folderID, c.Name)
 	if err != nil {
-		return err
+		return explainUnresolvedFolderPath(c.ID, folderID, err)
 	}
 
 	fmt.Printf("Folder renamed%s: %s\n", mailboxSuffix("in", target), outfmt.Sanitize(folder.DisplayName))
@@ -217,7 +232,7 @@ func (c *MailFoldersDeleteCmd) Run(ctx *RunContext) error {
 		return err
 	}
 	if err := client.DeleteMailFolder(ctx.Ctx, target, folderID); err != nil {
-		return err
+		return explainUnresolvedFolderPath(c.ID, folderID, err)
 	}
 
 	fmt.Printf("Folder deleted%s.\n", mailboxSuffix("from", target))

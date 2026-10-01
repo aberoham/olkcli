@@ -711,8 +711,9 @@ func mailFolderWriteError(action, target string, err error) error {
 }
 
 // refuseWellKnownMailFolder rejects a rename or delete addressed to one of the
-// protected well-known names. Graph refuses most of these itself; refusing here
-// keeps the answer the same for every mailbox and makes no request.
+// protected well-known names, without making a request. The check is on the name
+// alone: a folder addressed by its opaque ID is not recognised here and is left
+// to Graph.
 func refuseWellKnownMailFolder(verb, folderID string) error {
 	if protectedWellKnownMailFolders[strings.ToLower(folderID)] {
 		return fmt.Errorf("refusing to %s the well-known folder %q", verb, folderID)
