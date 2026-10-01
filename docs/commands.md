@@ -88,6 +88,10 @@ afterwards. Rename and delete refuse the well-known names `inbox`, `archive`,
 against them and is left to Graph. `--dry-run` prints the mailbox and the parent
 as typed without contacting Graph, so it does not confirm that the parent exists.
 
+`mail mark`, `flag`, `categorize` and `importance` act only on the signed-in
+user's own mailbox. With `--mailbox` or `OLK_MAILBOX` set they refuse to run,
+dry run included, and name the mailbox they cannot act on.
+
 To edit an existing draft without sending it:
 
 ```bash

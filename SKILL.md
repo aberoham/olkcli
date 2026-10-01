@@ -436,7 +436,7 @@ the shared mailbox and needs `Mail.ReadWrite.Shared` plus Exchange Full Access,
 but not `Mail.Send.Shared`, Send As, or Send on Behalf Of. Sending that draft
 later is a separate action and does require the sending grants.
 
-Sending, replying, forwarding, moving and deleting messages, the draft commands and creating, renaming and deleting folders are the writes that honour `--mailbox`. The calendar and contact writes ignore it, as do the commands that organise mail in place — flag, categorise, mark — and all of them act on the signed-in user's own mailbox.
+Sending, replying, forwarding, moving and deleting messages, the draft commands and creating, renaming and deleting folders are the writes that honour `--mailbox`. The calendar and contact writes ignore it and act on the signed-in user's own mailbox. The commands that organise mail in place — `mail flag`, `categorize`, `mark` and `importance` — do not support it and refuse to run, dry run included, while `--mailbox` or `OLK_MAILBOX` is set.
 
 ```bash
 # One-time login with shared scopes
@@ -478,7 +478,7 @@ export OLK_MAILBOX=boss@example.com
 ```
 
 - The target must have granted **Full Access** via M365 Admin Center → Mailbox permissions; the calling token must carry the matching `.Shared` scope.
-- Not every write honours it. Send, reply, forward, move, delete, the draft commands and the folder writes do; flagging, categorising and marking mail do not, nor do the calendar and contact writes, which always act on the signed-in user's own mailbox.
+- Not every write honours it. Send, reply, forward, move, delete, the draft commands and the folder writes do. Flagging, categorising, marking and setting importance refuse to run while it is set. The calendar and contact writes ignore it and always act on the signed-in user's own mailbox.
 
 ## Shortcuts
 

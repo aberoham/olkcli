@@ -33,11 +33,11 @@ A tool call runs the command against the mailbox the server was started with:
 olk mcp --mailbox team@example.com
 ```
 
-Tools that cannot honour that choice are not exposed. Some commands ignore
-`--mailbox` and always act on the signed-in user's own mailbox — the calendar
-and contact writes, the commands that organise mail in place, the To Do
-commands, and the people search — so on a server started with a mailbox they
-would quietly act on the wrong one. Withholding them costs an agent those tools;
+Tools that cannot honour that choice are not exposed. Some commands can only
+address the signed-in user's own mailbox — the calendar and contact writes, the
+commands that organise mail in place, the To Do commands, and the people search
+— so on a server started with a mailbox they would either refuse or quietly act
+on the wrong one. Withholding them costs an agent those tools;
 offering them would cost the operator a task or a message deleted in the wrong
 mailbox.
 

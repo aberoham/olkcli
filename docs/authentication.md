@@ -80,9 +80,11 @@ one listed from that mailbox; one taken from your own mailbox will not resolve.
 shared-mailbox message needs `Mail.ReadWrite.Shared` and Full Access, and the
 message ID (and, for a move, the destination folder) must belong to that
 mailbox. `mail folders create`, `rename` and `delete` honour it under the same
-scope and grant. Calendar writes, contact writes, and the commands that organise
-mail in place — flag, categorise, mark — remain scoped to the signed-in user;
-they do not read `--mailbox`.
+scope and grant. Calendar and contact writes remain scoped to the signed-in
+user; they do not read `--mailbox`. `mail flag`, `categorize`, `mark` and
+`importance` are scoped the same way and refuse to run while `--mailbox` or
+`OLK_MAILBOX` is set, so that they cannot act on a mailbox other than the one
+named.
 
 ## macOS Keychain
 
