@@ -19,8 +19,9 @@ var mailboxUnawareMailWrites = []struct {
 
 // These commands address the signed-in user's own mailbox whatever --mailbox
 // says. Run with the flag set they must stop before any request and say which
-// mailbox they could not act on, including for a dry run, which would otherwise
-// describe a write that was never going to reach the named mailbox.
+// mailbox they could not act on. That includes a dry run: flag, categorize and
+// importance would otherwise describe a write that was never going to reach the
+// named mailbox, and mark does not consult --dry-run at all.
 func TestMailboxUnawareMailWritesRefuseAMailboxTarget(t *testing.T) {
 	for _, tc := range mailboxUnawareMailWrites {
 		for _, extra := range [][]string{nil, {"--dry-run"}} {
