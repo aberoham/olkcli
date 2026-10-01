@@ -23,6 +23,20 @@ func resolveMailboxTarget(mailbox string) (string, error) {
 	return mailbox, nil
 }
 
+// refuseMailboxTarget is the guard for a command that addresses the signed-in
+// user's own mailbox whatever --mailbox says. Run with the flag set, such a
+// command would either act on the wrong mailbox and report success, or fail with
+// a Graph error about an ID that does not belong to it. Refusing first, and
+// naming the mailbox, covers a dry run as well.
+func refuseMailboxTarget(mailbox, command string) error {
+	mailbox = strings.TrimSpace(mailbox)
+	if mailbox == "" {
+		return nil
+	}
+	return fmt.Errorf("%s does not support --mailbox: it acts on %s, not %s. "+
+		"Unset --mailbox (or OLK_MAILBOX) to run it there", command, ownMailboxLabel, mailbox)
+}
+
 // buildMailFilter builds an OData filter string from common mail filter options
 func buildMailFilter(unread bool, from, after, before string) (string, error) {
 	var filters []string

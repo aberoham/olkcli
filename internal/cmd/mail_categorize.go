@@ -13,6 +13,10 @@ type MailCategorizeCmd struct {
 }
 
 func (c *MailCategorizeCmd) Run(ctx *RunContext) error {
+	if err := refuseMailboxTarget(ctx.Flags.Mailbox, "mail categorize"); err != nil {
+		return err
+	}
+
 	// Allow clearing categories with --categories none or --categories ""
 	clearCats := len(c.Categories) == 1 && (c.Categories[0] == clearSentinel || c.Categories[0] == "")
 	if clearCats {

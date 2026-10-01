@@ -13,6 +13,10 @@ type MailFlagCmd struct {
 }
 
 func (c *MailFlagCmd) Run(ctx *RunContext) error {
+	if err := refuseMailboxTarget(ctx.Flags.Mailbox, "mail flag"); err != nil {
+		return err
+	}
+
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err

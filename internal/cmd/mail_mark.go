@@ -9,6 +9,9 @@ type MailMarkCmd struct {
 }
 
 func (c *MailMarkCmd) Run(ctx *RunContext) error {
+	if err := refuseMailboxTarget(ctx.Flags.Mailbox, "mail mark"); err != nil {
+		return err
+	}
 	if !c.Read && !c.Unread {
 		return fmt.Errorf("specify --read or --unread")
 	}

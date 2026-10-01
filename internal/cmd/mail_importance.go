@@ -13,6 +13,10 @@ type MailImportanceCmd struct {
 }
 
 func (c *MailImportanceCmd) Run(ctx *RunContext) error {
+	if err := refuseMailboxTarget(ctx.Flags.Mailbox, "mail importance"); err != nil {
+		return err
+	}
+
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
