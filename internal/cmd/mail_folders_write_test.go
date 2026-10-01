@@ -177,9 +177,9 @@ func TestMailFoldersCreateNamesMissingParentComponent(t *testing.T) {
 }
 
 // A slash-bearing reference whose first component names no top-level folder is
-// sent to Graph unchanged, because a Graph ID may itself contain a slash. When
-// Graph then rejects it, the error has to say that the value was treated as an
-// ID, or a mistyped path reads as a malformed-ID failure with no way forward.
+// left unchanged, because a Graph ID may itself contain a slash. When Graph then
+// rejects it, the error has to say that the value was treated as an ID, or a
+// mistyped path reads as a malformed-ID failure with no way forward.
 func TestMailFolderWritesExplainAnUnresolvedPath(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -203,6 +203,32 @@ func TestMailFolderWritesExplainAnUnresolvedPath(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// An unresolved path that is not a well-formed ID is rejected before any write.
+// The explanation still applies, and must not say that a request was made.
+func TestMailFolderWritesExplainAnUnresolvedPathRejectedLocally(t *testing.T) {
+	_, err := runFolderWrite(
+		t,
+		"/v1.0/me",
+		[]string{"mail", "folders", "delete"},
+		[]string{"Missing/11 Nov", "--force"},
+		func(req *http.Request) *http.Response {
+			t.Fatalf("unexpected write for a malformed folder ID: %s %s", req.Method, req.URL)
+			return nil
+		},
+	)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, want := range []string{"invalid characters", `"Missing"`, "treated as a folder ID"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "sent to Graph") {
+		t.Errorf("error %q claims a request that was never made", err)
 	}
 }
 

@@ -102,16 +102,16 @@ func mailboxSuffix(preposition, target string) string {
 }
 
 // explainUnresolvedFolderPath annotates a failed folder write whose reference
-// was passed to Graph unchanged. The resolver leaves a slash-bearing value alone
-// when its first component names no top-level folder, because a Graph ID may
-// itself contain a slash, so a mistyped path would otherwise surface only as
-// Graph's complaint about a malformed ID.
+// the resolver returned unchanged. It leaves a slash-bearing value alone when
+// the first component names no top-level folder, because a Graph ID may itself
+// contain a slash, so a mistyped path would otherwise surface only as a
+// complaint about a malformed ID, from Graph or from local validation.
 func explainUnresolvedFolderPath(reference, resolved string, err error) error {
 	if err == nil || resolved != reference || !strings.Contains(reference, "/") {
 		return err
 	}
 	first, _, _ := strings.Cut(reference, "/")
-	return fmt.Errorf("%w\n\n%q was sent to Graph as a folder ID because %q does not name a top-level folder "+
+	return fmt.Errorf("%w\n\n%q was treated as a folder ID because %q does not name a top-level folder "+
 		"in that mailbox. If it was meant as a path, check its first component",
 		err, outfmt.Sanitize(reference), outfmt.Sanitize(first))
 }
