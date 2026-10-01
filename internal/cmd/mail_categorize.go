@@ -13,6 +13,10 @@ type MailCategorizeCmd struct {
 }
 
 func (c *MailCategorizeCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	// Allow clearing categories with --categories none or --categories ""
 	clearCats := len(c.Categories) == 1 && (c.Categories[0] == clearSentinel || c.Categories[0] == "")
 	if clearCats {
@@ -37,11 +41,11 @@ func (c *MailCategorizeCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would set categories on message %s\n", outfmt.Sanitize(c.ID))
+		fmt.Printf("Would set categories on message %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
 		return nil
 	}
 
-	err = client.CategorizeMessage(ctx.Ctx, c.ID, c.Categories)
+	err = client.CategorizeMessage(ctx.Ctx, target, c.ID, c.Categories)
 	if err != nil {
 		return err
 	}

@@ -20,12 +20,16 @@ type MailOOOCmd struct {
 type MailOOOGetCmd struct{}
 
 func (c *MailOOOGetCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
 
-	settings, err := client.GetAutoReply(ctx.Ctx)
+	settings, err := client.GetAutoReply(ctx.Ctx, target)
 	if err != nil {
 		return err
 	}
@@ -64,6 +68,10 @@ type MailOOOSetCmd struct {
 }
 
 func (c *MailOOOSetCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -103,13 +111,14 @@ func (c *MailOOOSetCmd) Run(ctx *RunContext) error {
 
 	if ctx.Flags.DryRun {
 		fmt.Printf("Would set auto-reply:\n  Status: %s\n  Message: %s\n", status, outfmt.Sanitize(c.Message))
+		printDryRunMailbox(target)
 		if status == oooStatusScheduled {
 			fmt.Printf("  Start: %s\n  End: %s\n", startStr, endStr)
 		}
 		return nil
 	}
 
-	err = client.SetAutoReply(ctx.Ctx, status, c.Message, externalMsg, startStr, endStr, c.Audience)
+	err = client.SetAutoReply(ctx.Ctx, target, status, c.Message, externalMsg, startStr, endStr, c.Audience)
 	if err != nil {
 		return err
 	}
@@ -126,12 +135,16 @@ func (c *MailOOOSetCmd) Run(ctx *RunContext) error {
 type MailOOOOffCmd struct{}
 
 func (c *MailOOOOffCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
 
-	err = client.SetAutoReply(ctx.Ctx, "disabled", "", "", "", "", "")
+	err = client.SetAutoReply(ctx.Ctx, target, "disabled", "", "", "", "", "")
 	if err != nil {
 		return err
 	}

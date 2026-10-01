@@ -349,7 +349,7 @@ func buildPhysicalAddressComplete(a *Address) models.PhysicalAddressable {
 	return addr
 }
 
-func (c *Client) CreateContact(ctx context.Context, in *ContactCreateInput) (*Contact, error) {
+func (c *Client) CreateContact(ctx context.Context, target string, in *ContactCreateInput) (*Contact, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -358,9 +358,9 @@ func (c *Client) CreateContact(ctx context.Context, in *ContactCreateInput) (*Co
 		return nil, err
 	}
 
-	created, err := c.inner.Me().Contacts().Post(ctx, ct, nil)
+	created, err := c.targetUser(target).Contacts().Post(ctx, ct, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating contact: %w", err)
+		return nil, mailboxError("creating contact", target, contactsGrantHint, err)
 	}
 	contact := convertContact(created)
 	return &contact, nil
@@ -504,7 +504,7 @@ func applyContactUpdateFields(ct models.Contactable, in *ContactUpdateInput) err
 	return nil
 }
 
-func (c *Client) UpdateContact(ctx context.Context, contactID string, in *ContactUpdateInput) (*Contact, error) {
+func (c *Client) UpdateContact(ctx context.Context, target, contactID string, in *ContactUpdateInput) (*Contact, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -517,24 +517,24 @@ func (c *Client) UpdateContact(ctx context.Context, contactID string, in *Contac
 		return nil, err
 	}
 
-	updated, err := c.inner.Me().Contacts().ByContactId(contactID).Patch(ctx, ct, nil)
+	updated, err := c.targetUser(target).Contacts().ByContactId(contactID).Patch(ctx, ct, nil)
 	if err != nil {
-		return nil, fmt.Errorf("updating contact: %w", err)
+		return nil, mailboxError("updating contact", target, contactsGrantHint, err)
 	}
 	contact := convertContact(updated)
 	return &contact, nil
 }
 
-func (c *Client) DeleteContact(ctx context.Context, contactID string) error {
+func (c *Client) DeleteContact(ctx context.Context, target, contactID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	if err := validateID(contactID, "contact ID"); err != nil {
 		return err
 	}
-	err := c.inner.Me().Contacts().ByContactId(contactID).Delete(ctx, nil)
+	err := c.targetUser(target).Contacts().ByContactId(contactID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting contact: %w", err)
+		return mailboxError("deleting contact", target, contactsGrantHint, err)
 	}
 	return nil
 }

@@ -90,9 +90,9 @@ olk mail move <ID> <FOLDER_ID_OR_PATH>                                 # e.g. In
 olk mail delete <ID> --force
 olk mail mark <ID> --read | --unread
 olk mail folders                                                          # list all visible folders recursively
-olk mail folders create -n "Project X"
-olk mail folders rename <FOLDER_ID> -n "New Name"
-olk mail folders delete <FOLDER_ID> --force
+olk mail folders create -n "Project X" [--parent FOLDER_ID_OR_PATH]       # e.g. --parent Inbox/2026
+olk mail folders rename <FOLDER_ID_OR_PATH> -n "New Name"
+olk mail folders delete <FOLDER_ID_OR_PATH> --force
 olk mail attachments <ID>                                                 # list attachments
 olk mail attachments <ID> --save [--out DIR]                             # download all
 olk mail attachments <ID> --attachment-id <ATT_ID> [--out DIR]           # download one
@@ -175,10 +175,19 @@ olk mail list --folder inbox --top 1000 --order oldest --json --results-only
 mailbox and require `Mail.ReadWrite.Shared` plus Full Access. The message ID,
 and for a move the destination folder, must belong to that mailbox.
 
-`--folder` and the `mail move` destination accept slash-separated display-name
-paths such as `Inbox/2026`; paths are resolved to Graph folder IDs by walking
-each level. A single display name such as `2026` is not a path and can be
-ambiguous, so use either its ID or its full path.
+`--folder`, the `mail move` destination, `mail folders create --parent` and the
+folder argument of `mail folders rename` and `delete` accept slash-separated
+display-name paths such as `Inbox/2026`; paths are resolved to Graph folder IDs
+by walking each level. A single display name such as `2026` is not a path and
+can be ambiguous, so use either its ID or its full path.
+
+`mail folders create`, `rename` and `delete` honour `--mailbox` and need
+`Mail.ReadWrite.Shared` plus Full Access there. Create makes a top-level folder
+unless `--parent` is given. A folder name cannot contain `/`. Rename and delete
+refuse the well-known names `inbox`, `archive`, `deleteditems` and `junkemail`;
+a folder addressed by ID is not checked against them. `--dry-run` names the
+mailbox and the parent as typed without contacting Graph, so it does not confirm
+that the parent exists.
 
 `--order` accepts `newest` (the default) or `oldest`. `--top` bounds the total
 result, not each provider page. `olk` follows pages internally until it reaches
@@ -432,7 +441,14 @@ the shared mailbox and needs `Mail.ReadWrite.Shared` plus Exchange Full Access,
 but not `Mail.Send.Shared`, Send As, or Send on Behalf Of. Sending that draft
 later is a separate action and does require the sending grants.
 
-Sending, replying, forwarding, moving and deleting messages and the draft commands are the writes that honour `--mailbox`. The calendar, contact and folder writes ignore it, as do the commands that organise mail in place — flag, categorise, mark — and all of them act on the signed-in user's own mailbox.
+Every mailbox-scoped command honours `--mailbox`: mail (including `mark`, `flag`, `categorize` and `importance`), folders, drafts, calendar, contacts, To Do, inbox rules, categories and automatic replies. IDs are per-mailbox, so list an item from the mailbox you then act on. Three commands ignore the flag because they answer from your own vantage point: `people search`, `calendar availability` and `calendar find-times`.
+
+What each needs on another mailbox:
+
+- Marking, flagging, categorising and setting importance: `Mail.ReadWrite.Shared` and Full Access.
+- Calendar writes and event attachments: `Calendars.ReadWrite.Shared` and delegate or shared access to the calendar.
+- Contact writes: `Contacts.ReadWrite.Shared` and access to the contacts folder.
+- To Do, inbox rules, categories and automatic replies: the request goes to the named mailbox, but Microsoft documents no shared-mailbox access for these, so Graph may refuse it.
 
 ```bash
 # One-time login with shared scopes
@@ -443,6 +459,7 @@ olk mail list --mailbox boss@example.com
 olk mail get <ID> --mailbox boss@example.com
 olk mail search "from:partner@example.com" --mailbox boss@example.com
 olk mail folders --mailbox boss@example.com
+olk mail folders create --mailbox team@example.com --name "11 Nov" --parent "Inbox/2026"
 olk mail attachments <ID> --mailbox boss@example.com   # list; also --save / --attachment-id to download
 
 # Send as a shared mailbox (needs Mail.Send.Shared + Send As + Full Access)
@@ -462,18 +479,23 @@ olk mail reply <ID> --mailbox team@example.com --body "..." --draft
 olk mail drafts create --mailbox team@example.com --to person@example.com --subject "..." --body "..."
 olk mail drafts list --mailbox team@example.com
 
-# Calendar (also: view, get, calendars)
+# Calendar (also: view, get, calendars, create, update, delete, respond, attachments)
 olk calendar events --mailbox boss@example.com
+olk calendar create --mailbox boss@example.com --subject "Review" --start 2026-11-02T10:00:00Z --end 2026-11-02T11:00:00Z
 
-# Contacts (also: get, search)
+# Contacts (also: get, search, create, update, delete)
 olk contacts list --mailbox boss@example.com
+
+# Organise mail in place
+olk mail mark <ID> --read --mailbox team@example.com
+olk mail categorize <ID> --categories "Answered" --mailbox team@example.com
 
 # Persist for the shell session
 export OLK_MAILBOX=boss@example.com
 ```
 
 - The target must have granted **Full Access** via M365 Admin Center → Mailbox permissions; the calling token must carry the matching `.Shared` scope.
-- Not every write honours it. Send, reply, forward, move, delete and the draft commands do; flagging, categorising and marking mail do not, nor do the folder, calendar and contact writes, which always act on the signed-in user's own mailbox.
+- Every mailbox-scoped write honours it. A dry run names the mailbox it would act on.
 
 ## Shortcuts
 
@@ -503,7 +525,7 @@ export OLK_MAILBOX=boss@example.com
 | `--json` | `OLK_JSON` | JSON output |
 | `--plain` | `OLK_PLAIN` | TSV output |
 | `--account EMAIL` | `OLK_ACCOUNT` | Use a specific account |
-| `--mailbox EMAIL` | `OLK_MAILBOX` | Target another user's mailbox (delegated read; mail/calendar/contacts). Needs the matching `.Shared` scope + Exchange Full Access |
+| `--mailbox EMAIL` | `OLK_MAILBOX` | Run every mailbox-scoped command (mail, folders, calendar, contacts, To Do, rules, categories, automatic replies) against another user's mailbox. Needs the matching `.Shared` scope where one exists + Exchange access to that mailbox |
 | `--results-only` | `OLK_RESULTS_ONLY` | Unwrap JSON envelope |
 | `--select FIELDS` | `OLK_SELECT` | Command-specific field projection; `mail list --json` projects both the Graph request and JSON result |
 | `--force` | `OLK_FORCE` | Skip confirmations |

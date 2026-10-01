@@ -236,13 +236,24 @@ var mailboxAwareTools = map[string]bool{
 	"mail_move": true, "mail_delete": true,
 	"mail_list": true, "mail_get": true, "mail_batch": true, "mail_thread": true,
 	"mail_search": true, "mail_folders_list": true, "mail_attachments": true, "mail_delta": true,
+	"mail_folders_create": true, "mail_folders_rename": true,
 	"mail_drafts_create": true, "mail_drafts_send": true,
 	"mail_send": true, "mail_reply": true, "mail_forward": true,
+	"mail_flag": true, "mail_categorize": true, "mail_mark": true,
+	"mail_categories_list": true, "mail_rules_list": true, "mail_ooo_get": true,
 	"calendar_events": true, "calendar_view": true, "calendar_get": true,
 	"calendar_calendars": true, "calendar_delta": true,
+	"calendar_create": true, "calendar_update": true, "calendar_delete": true,
+	"calendar_respond":          true,
+	"calendar_attachments_list": true, "calendar_attachments_download": true,
+	"calendar_attachments_add": true, "calendar_attachments_delete": true,
 	"contacts_list": true, "contacts_get": true, "contacts_search": true,
-	"contacts_delta": true,
-	"changes":        true,
+	"contacts_delta":  true,
+	"contacts_create": true, "contacts_update": true, "contacts_delete": true,
+	"todo_lists_list": true, "todo_list": true, "todo_get": true,
+	"todo_checklist_list": true, "todo_links_list": true,
+	"todo_create": true, "todo_update": true, "todo_complete": true, "todo_delete": true,
+	"changes": true,
 }
 
 // mailboxIrrelevantTools names the curated tools that have no mailbox dimension
@@ -253,11 +264,12 @@ var mailboxAwareTools = map[string]bool{
 //
 // The list is short on purpose. To Do looks like a separate service and is not:
 // its lists live in the user's mailbox, and Graph exposes them under
-// /users/{id}/todo, so a task deleted through /me/todo is deleted from the wrong
-// mailbox exactly as a message would be. The people search is the same shape —
-// /me/people ranks by the signed-in user's own correspondence, so under a
-// delegated server it answers from the operator's mailbox while appearing to
-// answer for the delegated one. Both are therefore scoped-but-unaware.
+// /users/{id}/todo, so its commands take the mailbox target and are in
+// mailboxAwareTools. The people search, the free/busy lookup and the meeting-time
+// search are the remaining scoped-but-unaware tools: each answers from the
+// signed-in user's own vantage point (their correspondence, their calendar), so
+// under a delegated server it would appear to answer for the delegated mailbox
+// while answering for the operator.
 var mailboxIrrelevantTools = map[string]bool{
 	"drive_ls": true, "drive_get": true, "drive_info": true, "drive_search": true,
 	"drive_recent": true, "drive_shared": true, "drive_versions": true,
@@ -271,9 +283,9 @@ var mailboxIrrelevantTools = map[string]bool{
 // This is the dangerous third class. A tool that honours the flag serves the
 // named mailbox; a tool with no mailbox dimension is unaffected by the choice;
 // but one of these silently substitutes a different mailbox for the one the
-// operator configured. Deleting a message or creating an event in the wrong
-// mailbox is not a degraded result, it is the wrong action taken, so a server
-// started with --mailbox does not register these at all.
+// operator configured. An answer drawn from the wrong mailbox is not a degraded
+// result, it is the wrong answer presented as the right one, so a server started
+// with --mailbox does not register these at all.
 func mailboxScopedButUnaware(toolName string) bool {
 	return !mailboxAwareTools[toolName] && !mailboxIrrelevantTools[toolName]
 }

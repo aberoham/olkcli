@@ -204,6 +204,184 @@ func TestValidateGraphContinuationAllowsMailFolderCollections(t *testing.T) {
 	}
 }
 
+// A folder write that ignores its target lands in the signed-in user's own
+// mailbox and still reports success, so the request path is asserted in both
+// directions for each of the three writes.
+func TestMailFolderWritesAddressTheRequestedMailbox(t *testing.T) {
+	const delegated = "/v1.0/users/shared@example.com"
+	tests := []struct {
+		name       string
+		wantMethod string
+		wantPath   string
+		call       func(*Client, context.Context) error
+	}{
+		{
+			name:       "create at the root of the caller's own mailbox",
+			wantMethod: http.MethodPost,
+			wantPath:   meBuilderPath + "/mailFolders",
+			call: func(c *Client, ctx context.Context) error {
+				_, err := c.CreateMailFolder(ctx, "", "", "Projects")
+				return err
+			},
+		},
+		{
+			name:       "create at the root of a shared mailbox",
+			wantMethod: http.MethodPost,
+			wantPath:   delegated + "/mailFolders",
+			call: func(c *Client, ctx context.Context) error {
+				_, err := c.CreateMailFolder(ctx, "shared@example.com", "", "Projects")
+				return err
+			},
+		},
+		{
+			name:       "create below a parent in a shared mailbox",
+			wantMethod: http.MethodPost,
+			wantPath:   delegated + "/mailFolders/year-id/childFolders",
+			call: func(c *Client, ctx context.Context) error {
+				_, err := c.CreateMailFolder(ctx, "shared@example.com", "year-id", "Projects")
+				return err
+			},
+		},
+		{
+			name:       "create below a parent in the caller's own mailbox",
+			wantMethod: http.MethodPost,
+			wantPath:   meBuilderPath + "/mailFolders/year-id/childFolders",
+			call: func(c *Client, ctx context.Context) error {
+				_, err := c.CreateMailFolder(ctx, "", "year-id", "Projects")
+				return err
+			},
+		},
+		{
+			name:       "rename in a shared mailbox",
+			wantMethod: http.MethodPatch,
+			wantPath:   delegated + "/mailFolders/year-id",
+			call: func(c *Client, ctx context.Context) error {
+				_, err := c.RenameMailFolder(ctx, "shared@example.com", "year-id", "Projects")
+				return err
+			},
+		},
+		{
+			name:       "rename in the caller's own mailbox",
+			wantMethod: http.MethodPatch,
+			wantPath:   meBuilderPath + "/mailFolders/year-id",
+			call: func(c *Client, ctx context.Context) error {
+				_, err := c.RenameMailFolder(ctx, "", "year-id", "Projects")
+				return err
+			},
+		},
+		{
+			name:       "delete from a shared mailbox",
+			wantMethod: http.MethodDelete,
+			wantPath:   delegated + "/mailFolders/year-id",
+			call: func(c *Client, ctx context.Context) error {
+				return c.DeleteMailFolder(ctx, "shared@example.com", "year-id")
+			},
+		},
+		{
+			name:       "delete from the caller's own mailbox",
+			wantMethod: http.MethodDelete,
+			wantPath:   meBuilderPath + "/mailFolders/year-id",
+			call: func(c *Client, ctx context.Context) error {
+				return c.DeleteMailFolder(ctx, "", "year-id")
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotMethod, gotPath string
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				gotMethod, gotPath = req.Method, req.URL.Path
+				if req.Method == http.MethodDelete {
+					return graphEmptyResponse(req)
+				}
+				return graphJSONResponse(req, `{"id":"folder-id","displayName":"Projects","parentFolderId":"year-id"}`)
+			})
+			if err := tc.call(client, context.Background()); err != nil {
+				t.Fatalf("folder write: %v", err)
+			}
+			if gotMethod != tc.wantMethod || gotPath != tc.wantPath {
+				t.Errorf("request = %s %q, want %s %q", gotMethod, gotPath, tc.wantMethod, tc.wantPath)
+			}
+		})
+	}
+}
+
+func TestCreateMailFolderReturnsParent(t *testing.T) {
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		return graphJSONResponse(req, `{"id":"folder-id","displayName":"Projects","parentFolderId":"year-id"}`)
+	})
+	folder, err := client.CreateMailFolder(context.Background(), "shared@example.com", "year-id", "Projects")
+	if err != nil {
+		t.Fatalf("CreateMailFolder: %v", err)
+	}
+	if folder.ID != "folder-id" || folder.DisplayName != "Projects" || folder.ParentFolderID != "year-id" {
+		t.Errorf("folder = %#v, want ID, name and parent from the response", folder)
+	}
+}
+
+// A refused folder write in another mailbox names the mailbox and the grants a
+// folder write needs, which are not the sending ones.
+func TestMailFolderWritesInSharedMailboxExplainRefusal(t *testing.T) {
+	code, message := "ErrorAccessDenied", "Access is denied. Check credentials and try again."
+	tests := []struct {
+		name   string
+		action string
+		call   func(*Client, context.Context) error
+	}{
+		{"create", "creating mail folder in shared@example.com", func(c *Client, ctx context.Context) error {
+			_, err := c.CreateMailFolder(ctx, "shared@example.com", "year-id", "Projects")
+			return err
+		}},
+		{"rename", "renaming mail folder in shared@example.com", func(c *Client, ctx context.Context) error {
+			_, err := c.RenameMailFolder(ctx, "shared@example.com", "year-id", "Projects")
+			return err
+		}},
+		{"delete", "deleting mail folder in shared@example.com", func(c *Client, ctx context.Context) error {
+			return c.DeleteMailFolder(ctx, "shared@example.com", "year-id")
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				return replyDraftErrorResponse(req, http.StatusForbidden, code, message)
+			})
+			err := tc.call(client, context.Background())
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			text := err.Error()
+			for _, want := range []string{tc.action, "Mail.ReadWrite.Shared", "Full Access"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("error %q lacks %q", text, want)
+				}
+			}
+			if strings.Contains(text, "Mail.Send.Shared") {
+				t.Errorf("error %q carries sending guidance", text)
+			}
+			if gotCode, status := ErrorMetadata(err); gotCode != code || status != http.StatusForbidden {
+				t.Errorf("ErrorMetadata = (%q, %d), want (%q, 403)", gotCode, status, code)
+			}
+		})
+	}
+}
+
+func TestRenameAndDeleteMailFolderRefuseWellKnownFolders(t *testing.T) {
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
+		t.Fatalf("unexpected Graph request: %s %s", req.Method, req.URL)
+		return nil
+	})
+	ctx := context.Background()
+	for _, name := range []string{"inbox", "Inbox", "archive", "deleteditems", "junkemail"} {
+		if _, err := client.RenameMailFolder(ctx, "shared@example.com", name, "Projects"); err == nil ||
+			!strings.Contains(err.Error(), "well-known") {
+			t.Errorf("RenameMailFolder(%q) error = %v, want a well-known folder refusal", name, err)
+		}
+		if err := client.DeleteMailFolder(ctx, "", name); err == nil || !strings.Contains(err.Error(), "well-known") {
+			t.Errorf("DeleteMailFolder(%q) error = %v, want a well-known folder refusal", name, err)
+		}
+	}
+}
+
 func folderIDs(folders []MailFolder) []string {
 	ids := make([]string, len(folders))
 	for i := range folders {
