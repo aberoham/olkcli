@@ -515,8 +515,9 @@ const (
 	organiseGrantHint = "Changing messages in another mailbox needs the Mail.ReadWrite.Shared scope " +
 		"(sign in again with --scope Mail.ReadWrite.Shared) and Full Access on that mailbox in " +
 		"Exchange. The message ID must be one listed from that mailbox"
-	calendarGrantHint = "Reading or changing events in another mailbox's calendar needs the " +
-		"Calendars.ReadWrite.Shared scope (sign in again with --scope Calendars.ReadWrite.Shared) and " +
+	calendarGrantHint = "Changing events in another mailbox's calendar needs the " +
+		"Calendars.ReadWrite.Shared scope (sign in again with --scope Calendars.ReadWrite.Shared), reading " +
+		"them needs Calendars.Read.Shared, and either needs " +
 		"delegate or shared access to that calendar in Exchange. The event ID must be one listed " +
 		"from that mailbox"
 	contactsGrantHint = "Changing contacts in another mailbox needs the Contacts.ReadWrite.Shared scope " +
