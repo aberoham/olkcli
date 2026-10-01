@@ -19,7 +19,8 @@ type CalendarAttachment struct {
 	Size        int32  `json:"size"`
 }
 
-// ListCalendarAttachments lists attachments on the signed-in user's event.
+// ListCalendarAttachments lists attachments on an event in the target mailbox, or
+// in the signed-in user's own mailbox when target is empty.
 func (c *Client) ListCalendarAttachments(ctx context.Context, target, eventID string) ([]CalendarAttachment, error) {
 	if err := validateID(eventID, "event ID"); err != nil {
 		return nil, err

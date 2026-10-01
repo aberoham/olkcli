@@ -111,6 +111,9 @@ func TestRefusedWritesInAnotherMailboxExplainTheFamilyGrant(t *testing.T) {
 	for _, tc := range refusedMailboxCalls {
 		t.Run(tc.name, func(t *testing.T) {
 			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				if !strings.HasPrefix(req.URL.Path, "/v1.0/users/shared@example.com/") {
+					t.Errorf("request path %q is not in the target mailbox", req.URL.Path)
+				}
 				return replyDraftErrorResponse(req, http.StatusForbidden, code, message)
 			})
 			err := tc.call(client, context.Background(), "shared@example.com")
@@ -139,6 +142,9 @@ func TestRefusedWritesInOwnMailboxCarryNoDelegationGuidance(t *testing.T) {
 	for _, tc := range refusedMailboxCalls {
 		t.Run(tc.name, func(t *testing.T) {
 			client := testGraphClient(t, func(req *http.Request) *http.Response {
+				if !strings.HasPrefix(req.URL.Path, meBuilderPath+"/") {
+					t.Errorf("request path %q is not in the caller's own mailbox", req.URL.Path)
+				}
 				return replyDraftErrorResponse(req, http.StatusForbidden, "ErrorAccessDenied", "Access is denied.")
 			})
 			err := tc.call(client, context.Background(), "")

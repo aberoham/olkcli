@@ -303,3 +303,29 @@ func TestMailboxScopedDryRunsWithoutAMailboxAreUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// OLK_MAILBOX selects the mailbox exactly as the flag does, and an empty
+// --mailbox is the documented way back to the signed-in user's own mailbox
+// while the variable is exported.
+func TestMailboxFromTheEnvironmentAndItsOverride(t *testing.T) {
+	t.Setenv("OLK_MAILBOX", "shared@example.com")
+	command := mailboxScopedCommand{path: []string{"todo", "lists", "list"}}
+	for _, tc := range []struct {
+		name   string
+		extra  []string
+		prefix string
+	}{
+		{"environment value", nil, "/v1.0/users/shared@example.com/"},
+		{"empty flag overrides it", []string{"--mailbox", ""}, "/v1.0/me/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths, _, err := runScopedCommand(t, command, tc.extra...)
+			if err != nil {
+				t.Fatalf("command failed: %v", err)
+			}
+			if len(paths) != 1 || !strings.HasPrefix(paths[0], tc.prefix) {
+				t.Fatalf("request paths = %v, want one request under %q", paths, tc.prefix)
+			}
+		})
+	}
+}

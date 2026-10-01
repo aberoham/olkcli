@@ -520,7 +520,7 @@ export OLK_MAILBOX=boss@example.com
 | `--json` | `OLK_JSON` | JSON output |
 | `--plain` | `OLK_PLAIN` | TSV output |
 | `--account EMAIL` | `OLK_ACCOUNT` | Use a specific account |
-| `--mailbox EMAIL` | `OLK_MAILBOX` | Target another user's mailbox (delegated read; mail/calendar/contacts). Needs the matching `.Shared` scope + Exchange Full Access |
+| `--mailbox EMAIL` | `OLK_MAILBOX` | Run every mailbox-scoped command (mail, folders, calendar, contacts, To Do, rules, categories, automatic replies) against another user's mailbox. Needs the matching `.Shared` scope + Exchange access to that mailbox |
 | `--results-only` | `OLK_RESULTS_ONLY` | Unwrap JSON envelope |
 | `--select FIELDS` | `OLK_SELECT` | Command-specific field projection; `mail list --json` projects both the Graph request and JSON result |
 | `--force` | `OLK_FORCE` | Skip confirmations |

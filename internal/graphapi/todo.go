@@ -68,7 +68,8 @@ type TodoLinkedResource struct {
 	WebURL          string `json:"webUrl"`
 }
 
-// ListTodoLists returns all task lists for the current user.
+// ListTodoLists returns all task lists in the target mailbox, or in the signed-in
+// user's own mailbox when target is empty.
 func (c *Client) ListTodoLists(ctx context.Context, target string) ([]TodoList, error) {
 	resp, err := c.targetUser(target).Todo().Lists().Get(ctx, nil)
 	if err != nil {
