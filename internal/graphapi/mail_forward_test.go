@@ -43,7 +43,7 @@ func TestForwardMessageCarriesCcInsideTheMessage(t *testing.T) {
 	for _, html := range []bool{false, true} {
 		t.Run(map[bool]string{false: "plain", true: "HTML"}[html], func(t *testing.T) {
 			var payload forwardPayload
-			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
 				if !strings.HasSuffix(req.URL.Path, "/messages/AAA/forward") {
 					t.Errorf("request path = %q, want the forward action", req.URL.Path)
 				}
@@ -72,7 +72,7 @@ func TestForwardMessageCarriesCcInsideTheMessage(t *testing.T) {
 				if payload.Comment != nil || payload.Message.Body == nil || payload.Message.Body.Content != "See below" {
 					t.Errorf("HTML forward payload = %+v, want the comment as message body only", payload)
 				}
-			} else if payload.Comment == nil || *payload.Comment != "See below" || payload.Message.Body != nil {
+			} else if payload.Comment == nil || *payload.Comment != "<div>See below</div>" || payload.Message.Body != nil {
 				t.Errorf("plain forward payload = %+v, want the comment field and no message body", payload)
 			}
 		})
@@ -95,7 +95,7 @@ func TestCreateForwardDraftRoutesAndKeepsTheForwardedOriginal(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
 				calls++
 				switch calls {
 				case 1:
@@ -112,7 +112,7 @@ func TestCreateForwardDraftRoutesAndKeepsTheForwardedOriginal(t *testing.T) {
 					if tc.html && payload.Comment != nil {
 						t.Errorf("HTML forward draft sent comment %q; the fragment belongs in the generated body", *payload.Comment)
 					}
-					if !tc.html && (payload.Comment == nil || *payload.Comment != tc.content) {
+					if !tc.html && (payload.Comment == nil || *payload.Comment != plainTextHTML(tc.content)) {
 						t.Errorf("plain forward draft comment = %v, want %q", payload.Comment, tc.content)
 					}
 					return graphJSONResponse(req, `{"id":"draft-id","subject":"FW: Original subject",`+
@@ -160,7 +160,7 @@ func TestCreateForwardDraftGuardsAndValidation(t *testing.T) {
 		t.Errorf("--no-write error = %v, want ErrNoWrite", err)
 	}
 
-	noSend := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+	noSend := testGraphClient(t, func(req *http.Request) *http.Response {
 		return graphJSONResponse(req, `{"id":"draft-id","subject":"FW: Original subject"}`)
 	})
 	noSend.SetGuards(false, true)
@@ -168,7 +168,7 @@ func TestCreateForwardDraftGuardsAndValidation(t *testing.T) {
 		t.Errorf("--no-send blocked a forward draft, which sends nothing: %v", err)
 	}
 
-	unused := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+	unused := testGraphClient(t, func(req *http.Request) *http.Response {
 		t.Fatalf("invalid input reached Graph: %s %s", req.Method, req.URL.Path)
 		return nil
 	})
@@ -185,7 +185,7 @@ func TestCreateForwardDraftGuardsAndValidation(t *testing.T) {
 
 func TestCreateForwardDraftCleanupNamesAForwardDraft(t *testing.T) {
 	calls := 0
-	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
 		calls++
 		switch req.Method {
 		case http.MethodPost:

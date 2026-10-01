@@ -46,21 +46,7 @@ func TestPlainTextHTMLKeepsLinesBlankLinesAndIndentation(t *testing.T) {
 	}
 }
 
-// replyToHTMLOriginal answers the original-format read as HTML, checking that
-// it goes to the same mailbox as the reply, and passes the rest to next.
-func replyToHTMLOriginal(t *testing.T, basePath string, next roundTripFunc) roundTripFunc {
-	return func(req *http.Request) *http.Response {
-		if isOriginalFormatRead(req) {
-			if req.URL.Path != basePath+"/messages/AAA" {
-				t.Errorf("format read path = %q, want %q", req.URL.Path, basePath+"/messages/AAA")
-			}
-			return graphJSONResponse(req, `{"singleValueExtendedProperties":[{"id":"Integer 0x1016","value":"3"}]}`)
-		}
-		return next(req)
-	}
-}
-
-func TestPlainReplyAndForwardToAnHTMLOriginalSendRenderedComment(t *testing.T) {
+func TestPlainReplyAndForwardSendRenderedCommentWithoutReadingOriginal(t *testing.T) {
 	const text = "Hello,\n\nSee below:\n  step 1 < step 2"
 	want := plainTextHTML(text)
 	tests := []struct {
@@ -85,7 +71,7 @@ func TestPlainReplyAndForwardToAnHTMLOriginalSendRenderedComment(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var payload replyActionPayload
 			actions := 0
-			client := testGraphClient(t, replyToHTMLOriginal(t, tc.base, func(req *http.Request) *http.Response {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
 				actions++
 				if req.Method != http.MethodPost || req.URL.Path != tc.base+"/messages/AAA"+tc.action {
 					t.Fatalf("request = %s %s, want POST %s", req.Method, req.URL.Path, tc.base+"/messages/AAA"+tc.action)
@@ -94,7 +80,7 @@ func TestPlainReplyAndForwardToAnHTMLOriginalSendRenderedComment(t *testing.T) {
 					t.Fatalf("decode request: %v", err)
 				}
 				return graphEmptyResponse(req)
-			}))
+			})
 			if err := tc.call(client, tc.target); err != nil {
 				t.Fatalf("%s: %v", tc.name, err)
 			}
@@ -111,9 +97,9 @@ func TestPlainReplyAndForwardToAnHTMLOriginalSendRenderedComment(t *testing.T) {
 	}
 }
 
-func TestPlainReplyDraftToAnHTMLOriginalCreatesWithRenderedComment(t *testing.T) {
+func TestPlainReplyDraftCreatesWithRenderedCommentWithoutReadingOriginal(t *testing.T) {
 	var comment *string
-	client := testGraphClient(t, replyToHTMLOriginal(t, meBuilderPath, func(req *http.Request) *http.Response {
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
 		var payload replyActionPayload
 		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -123,26 +109,13 @@ func TestPlainReplyDraftToAnHTMLOriginalCreatesWithRenderedComment(t *testing.T)
 			t.Error("plain draft sent message.body alongside the comment")
 		}
 		return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
-	}))
+	})
 	_, err := client.CreateReplyDraft(context.Background(), "", "AAA", &CreateReplyDraftOptions{Body: "one\ntwo"})
 	if err != nil {
 		t.Fatalf("CreateReplyDraft: %v", err)
 	}
 	if comment == nil || *comment != "<div>one</div><div>two</div>" {
 		t.Errorf("comment = %v, want each line as a div", comment)
-	}
-}
-
-func TestPlainReplyFailsClearlyWhenTheOriginalCannotBeRead(t *testing.T) {
-	client := testGraphClient(t, func(req *http.Request) *http.Response {
-		if !isOriginalFormatRead(req) {
-			t.Fatalf("unexpected request after a failed format read: %s %s", req.Method, req.URL.Path)
-		}
-		return replyDraftErrorResponse(req, http.StatusNotFound, "ErrorItemNotFound", "The specified object was not found in the store.")
-	})
-	err := client.ReplyMessage(context.Background(), "", "AAA", &ReplyOptions{Body: "text"})
-	if err == nil || !strings.Contains(err.Error(), "reading the original message's format for reply") {
-		t.Fatalf("error = %v, want the format read named", err)
 	}
 }
 
@@ -160,7 +133,7 @@ func TestReplyDraftAddsCcAndBccToTheGeneratedRecipients(t *testing.T) {
 		t.Run(map[bool]string{false: "plain", true: "HTML"}[html], func(t *testing.T) {
 			var patch recipientPatchPayload
 			patches := 0
-			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
 				switch req.Method {
 				case http.MethodPost:
 					body := `{"id":"draft-id","subject":"Re: Original subject",` + generatedReplyRecipients
@@ -210,7 +183,7 @@ func TestReplyDraftAddsCcAndBccToTheGeneratedRecipients(t *testing.T) {
 
 func TestReplyDraftRefusesToReplaceAnUnreportedCcList(t *testing.T) {
 	deleted := false
-	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
 		switch req.Method {
 		case http.MethodPost:
 			return graphJSONResponse(req, `{"id":"draft-id","subject":"Re: Original subject"}`)
@@ -248,7 +221,7 @@ func TestReplyWithAddedRecipientsSendsThroughADraft(t *testing.T) {
 	for _, sendFails := range []bool{false, true} {
 		t.Run(map[bool]string{false: "sent", true: "send fails"}[sendFails], func(t *testing.T) {
 			var steps []string
-			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
 				steps = append(steps, req.Method+" "+req.URL.Path[strings.LastIndex(req.URL.Path, "/"):])
 				switch {
 				case strings.HasSuffix(req.URL.Path, "/replyAll") || strings.HasSuffix(req.URL.Path, "/reply"):
@@ -294,7 +267,7 @@ func TestForwardCarriesBcc(t *testing.T) {
 			BccRecipients []replyRecipientPayload `json:"bccRecipients"`
 		} `json:"message"`
 	}
-	client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+	client := testGraphClient(t, func(req *http.Request) *http.Response {
 		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode forward: %v", err)
 		}
@@ -308,37 +281,6 @@ func TestForwardCarriesBcc(t *testing.T) {
 	}
 	if payload.Message == nil || recipientList(payload.Message.BccRecipients) != "audit@example.com" {
 		t.Errorf("forward payload = %+v, want the Bcc inside the message", payload.Message)
-	}
-}
-
-func TestPlainCommentUsesNativeFormatNotReturnedBody(t *testing.T) {
-	for _, tc := range []struct {
-		name, value, bodyType, want string
-		wantErr                     bool
-	}{
-		{"native text returned as HTML", "1", "html", "one\n<two>", false},
-		{"native HTML returned as text", "3", "text", "<div>one</div><div>&lt;two&gt;</div>", false},
-		{"missing", "", "html", "", true},
-		{"unknown", "0", "html", "", true},
-		{"RTF", "2", "html", "", true},
-		{"clear signed", "4", "html", "", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			client := testGraphClient(t, func(req *http.Request) *http.Response {
-				if !isOriginalFormatRead(req) || req.URL.Query().Get("$select") != "id" {
-					t.Fatalf("unexpected format query: %s", req.URL)
-				}
-				properties := `[]`
-				if tc.value != "" {
-					properties = `[{"id":"Integer 0x1016","value":"` + tc.value + `"}]`
-				}
-				return graphJSONResponse(req, `{"body":{"contentType":"`+tc.bodyType+`"},"singleValueExtendedProperties":`+properties+`}`)
-			})
-			got, err := client.plainComment(context.Background(), "", "AAA", "one\n<two>", "reply")
-			if (err != nil) != tc.wantErr || got != tc.want {
-				t.Fatalf("comment = %q, error = %v; want %q, error %v", got, err, tc.want, tc.wantErr)
-			}
-		})
 	}
 }
 

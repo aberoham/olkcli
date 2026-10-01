@@ -576,10 +576,7 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID string, opt
 	comment := opts.Body
 	var err error
 	if !opts.IsHTML {
-		comment, err = c.plainComment(ctx, target, messageID, opts.Body, action)
-		if err != nil {
-			return err
-		}
+		comment = plainTextHTML(opts.Body)
 	}
 	if opts.ReplyAll {
 		body := users.NewItemMessagesItemReplyAllPostRequestBody()

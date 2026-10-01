@@ -79,7 +79,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var payload replyActionPayload
-			client := testReplyGraphClient(t, func(req *http.Request) *http.Response {
+			client := testGraphClient(t, func(req *http.Request) *http.Response {
 				if !strings.HasSuffix(req.URL.Path, tc.path) {
 					t.Errorf("request path = %q, want suffix %q", req.URL.Path, tc.path)
 				}
@@ -107,7 +107,7 @@ func TestReplyAndForwardBodyFormats(t *testing.T) {
 					t.Errorf("body content = %q, want HTML input", got)
 				}
 			} else {
-				if payload.Comment == nil || *payload.Comment != "Reply body" {
+				if payload.Comment == nil || *payload.Comment != "<div>Reply body</div>" {
 					t.Errorf("plain comment = %v, want Reply body", payload.Comment)
 				}
 				if payload.Message != nil {
