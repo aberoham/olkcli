@@ -24,10 +24,10 @@ func TestNoWriteGuardBlocksMutations(t *testing.T) {
 		{"DeleteMessage from a shared mailbox", func() error { return c.DeleteMessage(ctx, "shared@example.com", "id") }},
 		{"MoveMessage", func() error { _, err := c.MoveMessage(ctx, "", "id", "f"); return err }},
 		{"MoveMessage in a shared mailbox", func() error { _, err := c.MoveMessage(ctx, "team@example.com", "id", "f"); return err }},
-		{"DeleteEvent", func() error { return c.DeleteEvent(ctx, "id") }},
-		{"DeleteContact", func() error { return c.DeleteContact(ctx, "id") }},
+		{"DeleteEvent", func() error { return c.DeleteEvent(ctx, "", "id") }},
+		{"DeleteContact", func() error { return c.DeleteContact(ctx, "", "id") }},
 		{"DeleteDriveItem", func() error { return c.DeleteDriveItem(ctx, "d", "i") }},
-		{"DeleteTodoTask", func() error { return c.DeleteTodoTask(ctx, "l", "t") }},
+		{"DeleteTodoTask", func() error { return c.DeleteTodoTask(ctx, "", "l", "t") }},
 		{"CreateMailFolder", func() error { _, err := c.CreateMailFolder(ctx, "", "", "n"); return err }},
 		{"CreateMailFolder in a shared mailbox", func() error {
 			_, err := c.CreateMailFolder(ctx, "shared@example.com", "p", "n")
@@ -42,7 +42,7 @@ func TestNoWriteGuardBlocksMutations(t *testing.T) {
 		{"DeleteMailFolder from a shared mailbox", func() error { return c.DeleteMailFolder(ctx, "shared@example.com", "f") }},
 		{"CreateUploadSession", func() error { _, err := c.CreateUploadSession(ctx, "d", "p", false); return err }},
 		{"CreateEvent", func() error {
-			_, err := c.CreateEvent(ctx, &CreateEventOptions{Subject: "s", Start: time.Now(), End: time.Now(), Attendees: []string{"a@b.com"}})
+			_, err := c.CreateEvent(ctx, "", &CreateEventOptions{Subject: "s", Start: time.Now(), End: time.Now(), Attendees: []string{"a@b.com"}})
 			return err
 		}},
 		{"SendMessage", func() error { return c.SendMessage(ctx, "", &SendMessageOptions{Subject: "s", Body: "b"}) }},
@@ -81,9 +81,9 @@ func TestNoSendGuardBlocksSends(t *testing.T) {
 		}},
 		{"SendDraft", func() error { return c.SendDraft(ctx, "", "id") }},
 		{"SendDraft from a shared mailbox", func() error { return c.SendDraft(ctx, "shared@example.com", "id") }},
-		{"RespondToEvent", func() error { return c.RespondToEvent(ctx, "id", "accept") }},
+		{"RespondToEvent", func() error { return c.RespondToEvent(ctx, "", "id", "accept") }},
 		{"CreateEvent w/ attendees", func() error {
-			_, err := c.CreateEvent(ctx, &CreateEventOptions{Subject: "s", Start: time.Now(), End: time.Now(), Attendees: []string{"a@b.com"}})
+			_, err := c.CreateEvent(ctx, "", &CreateEventOptions{Subject: "s", Start: time.Now(), End: time.Now(), Attendees: []string{"a@b.com"}})
 			return err
 		}},
 	}

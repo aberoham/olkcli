@@ -88,6 +88,15 @@ afterwards. Rename and delete refuse the well-known names `inbox`, `archive`,
 against them and is left to Graph. `--dry-run` prints the mailbox and the parent
 as typed without contacting Graph, so it does not confirm that the parent exists.
 
+`--mailbox EMAIL` applies to every mailbox-scoped command, not only the ones
+shown with it above: `mail mark`, `flag`, `categorize`, `importance`, `rules`,
+`categories` and `ooo`, the calendar and contact writes, event attachments, and
+all of `todo`. Each sends every request to that mailbox, and a dry run names it.
+`people search`, `calendar availability` and `calendar find-times` are the
+exceptions; they ask on behalf of the signed-in user. See
+[authentication](authentication.md) for the scope each family needs, and for the
+families Microsoft does not document for another mailbox.
+
 To edit an existing draft without sending it:
 
 ```bash

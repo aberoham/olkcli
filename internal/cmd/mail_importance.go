@@ -13,17 +13,21 @@ type MailImportanceCmd struct {
 }
 
 func (c *MailImportanceCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would set importance of message %s to %s\n", outfmt.Sanitize(c.ID), outfmt.Sanitize(c.Importance))
+		fmt.Printf("Would set importance of message %s to %s%s\n", outfmt.Sanitize(c.ID), outfmt.Sanitize(c.Importance), mailboxSuffix("in", target))
 		return nil
 	}
 
-	err = client.SetImportance(ctx.Ctx, c.ID, c.Importance)
+	err = client.SetImportance(ctx.Ctx, target, c.ID, c.Importance)
 	if err != nil {
 		return err
 	}

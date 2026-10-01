@@ -17,12 +17,16 @@ type MailRulesCmd struct {
 type MailRulesListCmd struct{}
 
 func (c *MailRulesListCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
 
-	rules, err := client.ListMailRules(ctx.Ctx)
+	rules, err := client.ListMailRules(ctx.Ctx, target)
 	if err != nil {
 		return err
 	}
@@ -59,6 +63,10 @@ type MailRulesCreateCmd struct {
 }
 
 func (c *MailRulesCreateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -106,10 +114,11 @@ func (c *MailRulesCreateCmd) Run(ctx *RunContext) error {
 	if ctx.Flags.DryRun {
 		fmt.Printf("Would create rule:\n  Name: %s\n  Conditions: %s\n  Actions: %s\n",
 			outfmt.Sanitize(c.Name), outfmt.Sanitize(strings.Join(conditions, ", ")), outfmt.Sanitize(strings.Join(actions, ", ")))
+		printDryRunMailbox(target)
 		return nil
 	}
 
-	rule, err := client.CreateMailRule(ctx.Ctx, c.Name, c.From, c.SubjectContain, c.HasAttachment, c.Move, c.MarkRead, c.Delete, c.ForwardTo, c.SetImportance)
+	rule, err := client.CreateMailRule(ctx.Ctx, target, c.Name, c.From, c.SubjectContain, c.HasAttachment, c.Move, c.MarkRead, c.Delete, c.ForwardTo, c.SetImportance)
 	if err != nil {
 		return err
 	}
@@ -123,6 +132,10 @@ type MailRulesDeleteCmd struct {
 }
 
 func (c *MailRulesDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -132,7 +145,7 @@ func (c *MailRulesDeleteCmd) Run(ctx *RunContext) error {
 		return fmt.Errorf("delete rule %s: use --force to confirm deletion", outfmt.Sanitize(c.ID))
 	}
 
-	err = client.DeleteMailRule(ctx.Ctx, c.ID)
+	err = client.DeleteMailRule(ctx.Ctx, target, c.ID)
 	if err != nil {
 		return err
 	}

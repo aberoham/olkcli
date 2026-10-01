@@ -9,6 +9,10 @@ type MailMarkCmd struct {
 }
 
 func (c *MailMarkCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !c.Read && !c.Unread {
 		return fmt.Errorf("specify --read or --unread")
 	}
@@ -18,7 +22,7 @@ func (c *MailMarkCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	err = client.MarkMessage(ctx.Ctx, c.ID, c.Read)
+	err = client.MarkMessage(ctx.Ctx, target, c.ID, c.Read)
 	if err != nil {
 		return err
 	}

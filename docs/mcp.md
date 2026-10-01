@@ -33,17 +33,17 @@ A tool call runs the command against the mailbox the server was started with:
 olk mcp --mailbox team@example.com
 ```
 
-Tools that cannot honour that choice are not exposed. Some commands ignore
-`--mailbox` and always act on the signed-in user's own mailbox — the calendar
-and contact writes, the commands that organise mail in place, the To Do
-commands, and the people search — so on a server started with a mailbox they
-would quietly act on the wrong one. Withholding them costs an agent those tools;
-offering them would cost the operator a task or a message deleted in the wrong
-mailbox.
+Tools that cannot honour that choice are not exposed. Three commands answer from
+the signed-in user's own vantage point whatever `--mailbox` says — the people
+search, which ranks by that user's correspondence, and the free/busy and
+meeting-time lookups, which ask on that user's behalf — so on a server started
+with a mailbox they would appear to answer for it while answering for the
+operator. Withholding them costs an agent those tools; offering them would hand
+it an answer drawn from the wrong mailbox.
 
-To Do is included because its lists live in the mailbox even though it looks like
-a separate service, and the people search because `/me/people` ranks by the
-signed-in user's own correspondence. OneDrive is genuinely separate, and is
+Every other mailbox-scoped tool honours the mailbox: mail, folders, drafts,
+calendar, contacts and To Do, whose lists live in the mailbox even though it
+looks like a separate service. OneDrive is genuinely separate, and is
 unaffected.
 
 To let an agent choose per call, name the mailboxes it may use. Anything else is

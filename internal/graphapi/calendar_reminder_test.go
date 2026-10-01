@@ -26,14 +26,14 @@ func TestEventReminderOptionsRejectInvalidValues(t *testing.T) {
 				t.Fatal("invalid reminder must not send a Graph request")
 				return nil
 			})
-			_, err := client.CreateEvent(context.Background(), &CreateEventOptions{
+			_, err := client.CreateEvent(context.Background(), "", &CreateEventOptions{
 				Subject: "Event", Start: time.Now(), End: time.Now().Add(time.Hour),
 				ReminderOn: tc.on, ReminderMinutes: tc.minutes,
 			})
 			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
 				t.Errorf("CreateEvent() error = %v, want %q", err, tc.wantError)
 			}
-			_, err = client.UpdateEvent(context.Background(), &UpdateEventOptions{
+			_, err = client.UpdateEvent(context.Background(), "", &UpdateEventOptions{
 				EventID: "event-id", ReminderOn: tc.on, ReminderMinutes: tc.minutes,
 			})
 			if err == nil || !strings.Contains(err.Error(), tc.wantError) {

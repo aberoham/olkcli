@@ -69,10 +69,10 @@ type TodoLinkedResource struct {
 }
 
 // ListTodoLists returns all task lists for the current user.
-func (c *Client) ListTodoLists(ctx context.Context) ([]TodoList, error) {
-	resp, err := c.inner.Me().Todo().Lists().Get(ctx, nil)
+func (c *Client) ListTodoLists(ctx context.Context, target string) ([]TodoList, error) {
+	resp, err := c.targetUser(target).Todo().Lists().Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing todo lists: %w", err)
+		return nil, mailboxError("listing todo lists", target, todoGrantHint, err)
 	}
 
 	result := make([]TodoList, 0, len(resp.GetValue()))
@@ -92,16 +92,16 @@ func (c *Client) ListTodoLists(ctx context.Context) ([]TodoList, error) {
 }
 
 // CreateTodoList creates a new task list.
-func (c *Client) CreateTodoList(ctx context.Context, displayName string) (*TodoList, error) {
+func (c *Client) CreateTodoList(ctx context.Context, target, displayName string) (*TodoList, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
 	list := models.NewTodoTaskList()
 	list.SetDisplayName(&displayName)
 
-	created, err := c.inner.Me().Todo().Lists().Post(ctx, list, nil)
+	created, err := c.targetUser(target).Todo().Lists().Post(ctx, list, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating todo list: %w", err)
+		return nil, mailboxError("creating todo list", target, todoGrantHint, err)
 	}
 
 	result := TodoList{
@@ -117,22 +117,22 @@ func (c *Client) CreateTodoList(ctx context.Context, displayName string) (*TodoL
 }
 
 // DeleteTodoList deletes a task list.
-func (c *Client) DeleteTodoList(ctx context.Context, listID string) error {
+func (c *Client) DeleteTodoList(ctx context.Context, target, listID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	if err := validateID(listID, "list ID"); err != nil {
 		return err
 	}
-	err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Delete(ctx, nil)
+	err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting todo list: %w", err)
+		return mailboxError("deleting todo list", target, todoGrantHint, err)
 	}
 	return nil
 }
 
 // ListTodoTasks returns tasks in a given task list.
-func (c *Client) ListTodoTasks(ctx context.Context, listID string, top int32, status string) ([]TodoTask, error) {
+func (c *Client) ListTodoTasks(ctx context.Context, target, listID string, top int32, status string) ([]TodoTask, error) {
 	if err := validateID(listID, "list ID"); err != nil {
 		return nil, err
 	}
@@ -160,9 +160,9 @@ func (c *Client) ListTodoTasks(ctx context.Context, listID string, top int32, st
 		QueryParameters: queryParams,
 	}
 
-	resp, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().Get(ctx, config)
+	resp, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().Get(ctx, config)
 	if err != nil {
-		return nil, fmt.Errorf("listing todo tasks: %w", err)
+		return nil, mailboxError("listing todo tasks", target, todoGrantHint, err)
 	}
 
 	result := make([]TodoTask, 0, len(resp.GetValue()))
@@ -173,7 +173,7 @@ func (c *Client) ListTodoTasks(ctx context.Context, listID string, top int32, st
 }
 
 // GetTodoTask returns a single task by ID.
-func (c *Client) GetTodoTask(ctx context.Context, listID, taskID string) (*TodoTask, error) {
+func (c *Client) GetTodoTask(ctx context.Context, target, listID, taskID string) (*TodoTask, error) {
 	if err := validateID(listID, "list ID"); err != nil {
 		return nil, err
 	}
@@ -181,9 +181,9 @@ func (c *Client) GetTodoTask(ctx context.Context, listID, taskID string) (*TodoT
 		return nil, err
 	}
 
-	t, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Get(ctx, nil)
+	t, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting todo task: %w", err)
+		return nil, mailboxError("getting todo task", target, todoGrantHint, err)
 	}
 
 	task := convertTodoTask(t)
@@ -191,7 +191,7 @@ func (c *Client) GetTodoTask(ctx context.Context, listID, taskID string) (*TodoT
 }
 
 // CreateTodoTask creates a new task in the given list.
-func (c *Client) CreateTodoTask(ctx context.Context, listID, title, dueDate, importance, body, startDate, reminderDate, recurrence string, categories []string) (*TodoTask, error) {
+func (c *Client) CreateTodoTask(ctx context.Context, target, listID, title, dueDate, importance, body, startDate, reminderDate, recurrence string, categories []string) (*TodoTask, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -288,9 +288,9 @@ func (c *Client) CreateTodoTask(ctx context.Context, listID, title, dueDate, imp
 		task.SetCategories(categories)
 	}
 
-	resp, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().Post(ctx, task, nil)
+	resp, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().Post(ctx, task, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating todo task: %w", err)
+		return nil, mailboxError("creating todo task", target, todoGrantHint, err)
 	}
 
 	result := convertTodoTask(resp)
@@ -298,7 +298,7 @@ func (c *Client) CreateTodoTask(ctx context.Context, listID, title, dueDate, imp
 }
 
 // CompleteTodoTask marks a task as completed.
-func (c *Client) CompleteTodoTask(ctx context.Context, listID, taskID string) error {
+func (c *Client) CompleteTodoTask(ctx context.Context, target, listID, taskID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -313,15 +313,15 @@ func (c *Client) CompleteTodoTask(ctx context.Context, listID, taskID string) er
 	status := models.COMPLETED_TASKSTATUS
 	task.SetStatus(&status)
 
-	_, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Patch(ctx, task, nil)
+	_, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Patch(ctx, task, nil)
 	if err != nil {
-		return fmt.Errorf("completing todo task: %w", err)
+		return mailboxError("completing todo task", target, todoGrantHint, err)
 	}
 	return nil
 }
 
 // UpdateTodoTask updates a task's properties.
-func (c *Client) UpdateTodoTask(ctx context.Context, listID, taskID string, title, dueDate, importance, body, startDate, reminderDate, recurrence *string, categories *[]string) (*TodoTask, error) {
+func (c *Client) UpdateTodoTask(ctx context.Context, target, listID, taskID string, title, dueDate, importance, body, startDate, reminderDate, recurrence *string, categories *[]string) (*TodoTask, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -442,9 +442,9 @@ func (c *Client) UpdateTodoTask(ctx context.Context, listID, taskID string, titl
 		task.SetCategories(*categories)
 	}
 
-	resp, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Patch(ctx, task, nil)
+	resp, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Patch(ctx, task, nil)
 	if err != nil {
-		return nil, fmt.Errorf("updating todo task: %w", err)
+		return nil, mailboxError("updating todo task", target, todoGrantHint, err)
 	}
 
 	result := convertTodoTask(resp)
@@ -452,7 +452,7 @@ func (c *Client) UpdateTodoTask(ctx context.Context, listID, taskID string, titl
 }
 
 // DeleteTodoTask deletes a task.
-func (c *Client) DeleteTodoTask(ctx context.Context, listID, taskID string) error {
+func (c *Client) DeleteTodoTask(ctx context.Context, target, listID, taskID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -463,9 +463,9 @@ func (c *Client) DeleteTodoTask(ctx context.Context, listID, taskID string) erro
 		return err
 	}
 
-	err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Delete(ctx, nil)
+	err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting todo task: %w", err)
+		return mailboxError("deleting todo task", target, todoGrantHint, err)
 	}
 	return nil
 }
@@ -520,7 +520,7 @@ func convertTodoTask(t models.TodoTaskable) TodoTask {
 // --- Checklist Item methods ---
 
 // ListChecklistItems returns all checklist items for a task.
-func (c *Client) ListChecklistItems(ctx context.Context, listID, taskID string) ([]TodoChecklistItem, error) {
+func (c *Client) ListChecklistItems(ctx context.Context, target, listID, taskID string) ([]TodoChecklistItem, error) {
 	if err := validateID(listID, "list ID"); err != nil {
 		return nil, err
 	}
@@ -528,9 +528,9 @@ func (c *Client) ListChecklistItems(ctx context.Context, listID, taskID string) 
 		return nil, err
 	}
 
-	resp, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().Get(ctx, nil)
+	resp, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing checklist items: %w", err)
+		return nil, mailboxError("listing checklist items", target, todoGrantHint, err)
 	}
 
 	result := make([]TodoChecklistItem, 0, len(resp.GetValue()))
@@ -541,7 +541,7 @@ func (c *Client) ListChecklistItems(ctx context.Context, listID, taskID string) 
 }
 
 // CreateChecklistItem creates a new checklist item on a task.
-func (c *Client) CreateChecklistItem(ctx context.Context, listID, taskID, displayName string) (*TodoChecklistItem, error) {
+func (c *Client) CreateChecklistItem(ctx context.Context, target, listID, taskID, displayName string) (*TodoChecklistItem, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -555,9 +555,9 @@ func (c *Client) CreateChecklistItem(ctx context.Context, listID, taskID, displa
 	item := models.NewChecklistItem()
 	item.SetDisplayName(&displayName)
 
-	created, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().Post(ctx, item, nil)
+	created, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().Post(ctx, item, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating checklist item: %w", err)
+		return nil, mailboxError("creating checklist item", target, todoGrantHint, err)
 	}
 
 	result := convertChecklistItem(created)
@@ -565,7 +565,7 @@ func (c *Client) CreateChecklistItem(ctx context.Context, listID, taskID, displa
 }
 
 // UpdateChecklistItem updates a checklist item's properties.
-func (c *Client) UpdateChecklistItem(ctx context.Context, listID, taskID, itemID string, displayName *string, isChecked *bool) (*TodoChecklistItem, error) {
+func (c *Client) UpdateChecklistItem(ctx context.Context, target, listID, taskID, itemID string, displayName *string, isChecked *bool) (*TodoChecklistItem, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -587,9 +587,9 @@ func (c *Client) UpdateChecklistItem(ctx context.Context, listID, taskID, itemID
 		item.SetIsChecked(isChecked)
 	}
 
-	updated, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Patch(ctx, item, nil)
+	updated, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Patch(ctx, item, nil)
 	if err != nil {
-		return nil, fmt.Errorf("updating checklist item: %w", err)
+		return nil, mailboxError("updating checklist item", target, todoGrantHint, err)
 	}
 
 	result := convertChecklistItem(updated)
@@ -597,7 +597,7 @@ func (c *Client) UpdateChecklistItem(ctx context.Context, listID, taskID, itemID
 }
 
 // DeleteChecklistItem deletes a checklist item.
-func (c *Client) DeleteChecklistItem(ctx context.Context, listID, taskID, itemID string) error {
+func (c *Client) DeleteChecklistItem(ctx context.Context, target, listID, taskID, itemID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -611,15 +611,15 @@ func (c *Client) DeleteChecklistItem(ctx context.Context, listID, taskID, itemID
 		return err
 	}
 
-	err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Delete(ctx, nil)
+	err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting checklist item: %w", err)
+		return mailboxError("deleting checklist item", target, todoGrantHint, err)
 	}
 	return nil
 }
 
 // ToggleChecklistItem toggles the IsChecked state of a checklist item.
-func (c *Client) ToggleChecklistItem(ctx context.Context, listID, taskID, itemID string) (*TodoChecklistItem, error) {
+func (c *Client) ToggleChecklistItem(ctx context.Context, target, listID, taskID, itemID string) (*TodoChecklistItem, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -634,9 +634,9 @@ func (c *Client) ToggleChecklistItem(ctx context.Context, listID, taskID, itemID
 	}
 
 	// Get current state
-	current, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Get(ctx, nil)
+	current, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting checklist item: %w", err)
+		return nil, mailboxError("getting checklist item", target, todoGrantHint, err)
 	}
 
 	// Flip the IsChecked value
@@ -645,9 +645,9 @@ func (c *Client) ToggleChecklistItem(ctx context.Context, listID, taskID, itemID
 	patch := models.NewChecklistItem()
 	patch.SetIsChecked(&newChecked)
 
-	updated, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Patch(ctx, patch, nil)
+	updated, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).ChecklistItems().ByChecklistItemId(itemID).Patch(ctx, patch, nil)
 	if err != nil {
-		return nil, fmt.Errorf("toggling checklist item: %w", err)
+		return nil, mailboxError("toggling checklist item", target, todoGrantHint, err)
 	}
 
 	result := convertChecklistItem(updated)
@@ -674,7 +674,7 @@ func convertChecklistItem(item models.ChecklistItemable) TodoChecklistItem {
 // --- Attachment methods ---
 
 // ListTodoAttachments returns all attachments for a task.
-func (c *Client) ListTodoAttachments(ctx context.Context, listID, taskID string) ([]TodoAttachment, error) {
+func (c *Client) ListTodoAttachments(ctx context.Context, target, listID, taskID string) ([]TodoAttachment, error) {
 	if err := validateID(listID, "list ID"); err != nil {
 		return nil, err
 	}
@@ -682,9 +682,9 @@ func (c *Client) ListTodoAttachments(ctx context.Context, listID, taskID string)
 		return nil, err
 	}
 
-	resp, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().Get(ctx, nil)
+	resp, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing todo attachments: %w", err)
+		return nil, mailboxError("listing todo attachments", target, todoGrantHint, err)
 	}
 
 	result := make([]TodoAttachment, 0, len(resp.GetValue()))
@@ -708,7 +708,7 @@ func (c *Client) ListTodoAttachments(ctx context.Context, listID, taskID string)
 }
 
 // UploadTodoAttachment uploads a file attachment to a task.
-func (c *Client) UploadTodoAttachment(ctx context.Context, listID, taskID, name, contentType string, content []byte) (*TodoAttachment, error) {
+func (c *Client) UploadTodoAttachment(ctx context.Context, target, listID, taskID, name, contentType string, content []byte) (*TodoAttachment, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -726,9 +726,9 @@ func (c *Client) UploadTodoAttachment(ctx context.Context, listID, taskID, name,
 	att.SetContentType(&contentType)
 	att.SetContentBytes(content)
 
-	created, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().Post(ctx, att, nil)
+	created, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().Post(ctx, att, nil)
 	if err != nil {
-		return nil, fmt.Errorf("uploading todo attachment: %w", err)
+		return nil, mailboxError("uploading todo attachment", target, todoGrantHint, err)
 	}
 
 	result := TodoAttachment{}
@@ -748,7 +748,7 @@ func (c *Client) UploadTodoAttachment(ctx context.Context, listID, taskID, name,
 }
 
 // DownloadTodoAttachment downloads a task attachment's content.
-func (c *Client) DownloadTodoAttachment(ctx context.Context, listID, taskID, attachmentID string) (name, contentType string, content []byte, err error) {
+func (c *Client) DownloadTodoAttachment(ctx context.Context, target, listID, taskID, attachmentID string) (name, contentType string, content []byte, err error) {
 	if e := validateID(listID, "list ID"); e != nil {
 		return "", "", nil, e
 	}
@@ -759,9 +759,9 @@ func (c *Client) DownloadTodoAttachment(ctx context.Context, listID, taskID, att
 		return "", "", nil, e
 	}
 
-	att, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().ByAttachmentBaseId(attachmentID).Get(ctx, nil)
+	att, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().ByAttachmentBaseId(attachmentID).Get(ctx, nil)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("downloading todo attachment: %w", err)
+		return "", "", nil, mailboxError("downloading todo attachment", target, todoGrantHint, err)
 	}
 
 	if att.GetName() != nil {
@@ -784,7 +784,7 @@ func (c *Client) DownloadTodoAttachment(ctx context.Context, listID, taskID, att
 }
 
 // DeleteTodoAttachment deletes a task attachment.
-func (c *Client) DeleteTodoAttachment(ctx context.Context, listID, taskID, attachmentID string) error {
+func (c *Client) DeleteTodoAttachment(ctx context.Context, target, listID, taskID, attachmentID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -798,9 +798,9 @@ func (c *Client) DeleteTodoAttachment(ctx context.Context, listID, taskID, attac
 		return err
 	}
 
-	err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().ByAttachmentBaseId(attachmentID).Delete(ctx, nil)
+	err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).Attachments().ByAttachmentBaseId(attachmentID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting todo attachment: %w", err)
+		return mailboxError("deleting todo attachment", target, todoGrantHint, err)
 	}
 	return nil
 }
@@ -808,7 +808,7 @@ func (c *Client) DeleteTodoAttachment(ctx context.Context, listID, taskID, attac
 // --- Linked Resource methods ---
 
 // ListLinkedResources returns all linked resources for a task.
-func (c *Client) ListLinkedResources(ctx context.Context, listID, taskID string) ([]TodoLinkedResource, error) {
+func (c *Client) ListLinkedResources(ctx context.Context, target, listID, taskID string) ([]TodoLinkedResource, error) {
 	if err := validateID(listID, "list ID"); err != nil {
 		return nil, err
 	}
@@ -816,9 +816,9 @@ func (c *Client) ListLinkedResources(ctx context.Context, listID, taskID string)
 		return nil, err
 	}
 
-	resp, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).LinkedResources().Get(ctx, nil)
+	resp, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).LinkedResources().Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing linked resources: %w", err)
+		return nil, mailboxError("listing linked resources", target, todoGrantHint, err)
 	}
 
 	result := make([]TodoLinkedResource, 0, len(resp.GetValue()))
@@ -829,7 +829,7 @@ func (c *Client) ListLinkedResources(ctx context.Context, listID, taskID string)
 }
 
 // CreateLinkedResource creates a new linked resource on a task.
-func (c *Client) CreateLinkedResource(ctx context.Context, listID, taskID, displayName, appName, externalID, webURL string) (*TodoLinkedResource, error) {
+func (c *Client) CreateLinkedResource(ctx context.Context, target, listID, taskID, displayName, appName, externalID, webURL string) (*TodoLinkedResource, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -846,9 +846,9 @@ func (c *Client) CreateLinkedResource(ctx context.Context, listID, taskID, displ
 	lr.SetExternalId(&externalID)
 	lr.SetWebUrl(&webURL)
 
-	created, err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).LinkedResources().Post(ctx, lr, nil)
+	created, err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).LinkedResources().Post(ctx, lr, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating linked resource: %w", err)
+		return nil, mailboxError("creating linked resource", target, todoGrantHint, err)
 	}
 
 	result := convertLinkedResource(created)
@@ -856,7 +856,7 @@ func (c *Client) CreateLinkedResource(ctx context.Context, listID, taskID, displ
 }
 
 // DeleteLinkedResource deletes a linked resource from a task.
-func (c *Client) DeleteLinkedResource(ctx context.Context, listID, taskID, resourceID string) error {
+func (c *Client) DeleteLinkedResource(ctx context.Context, target, listID, taskID, resourceID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -870,9 +870,9 @@ func (c *Client) DeleteLinkedResource(ctx context.Context, listID, taskID, resou
 		return err
 	}
 
-	err := c.inner.Me().Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).LinkedResources().ByLinkedResourceId(resourceID).Delete(ctx, nil)
+	err := c.targetUser(target).Todo().Lists().ByTodoTaskListId(listID).Tasks().ByTodoTaskId(taskID).LinkedResources().ByLinkedResourceId(resourceID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting linked resource: %w", err)
+		return mailboxError("deleting linked resource", target, todoGrantHint, err)
 	}
 	return nil
 }

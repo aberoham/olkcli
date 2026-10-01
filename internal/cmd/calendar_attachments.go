@@ -31,11 +31,15 @@ type CalendarAttachmentsListCmd struct {
 }
 
 func (c *CalendarAttachmentsListCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
-	attachments, err := client.ListCalendarAttachments(ctx.Ctx, c.EventID)
+	attachments, err := client.ListCalendarAttachments(ctx.Ctx, target, c.EventID)
 	if err != nil {
 		return err
 	}
@@ -69,6 +73,10 @@ type CalendarAttachmentsAddCmd struct {
 }
 
 func (c *CalendarAttachmentsAddCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	info, err := os.Stat(c.File)
 	if err != nil {
 		return fmt.Errorf("reading file: %w", err)
@@ -90,7 +98,7 @@ func (c *CalendarAttachmentsAddCmd) Run(ctx *RunContext) error {
 	name := filepath.Base(c.File)
 	contentType := http.DetectContentType(content)
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would upload %s to event %s\n", outfmt.Sanitize(name), outfmt.Sanitize(c.EventID))
+		fmt.Printf("Would upload %s to event %s%s\n", outfmt.Sanitize(name), outfmt.Sanitize(c.EventID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -98,7 +106,7 @@ func (c *CalendarAttachmentsAddCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
-	attachment, err := client.UploadCalendarAttachment(ctx.Ctx, c.EventID, name, contentType, content)
+	attachment, err := client.UploadCalendarAttachment(ctx.Ctx, target, c.EventID, name, contentType, content)
 	if err != nil {
 		return err
 	}
@@ -117,11 +125,15 @@ type CalendarAttachmentsDownloadCmd struct {
 }
 
 func (c *CalendarAttachmentsDownloadCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
-	attachment, content, err := client.DownloadCalendarAttachment(ctx.Ctx, c.EventID, c.AttachmentID)
+	attachment, content, err := client.DownloadCalendarAttachment(ctx.Ctx, target, c.EventID, c.AttachmentID)
 	if err != nil {
 		return err
 	}
@@ -144,18 +156,22 @@ type CalendarAttachmentsDeleteCmd struct {
 }
 
 func (c *CalendarAttachmentsDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !ctx.Flags.Force {
 		return fmt.Errorf("delete attachment %s: use --force to confirm deletion", outfmt.Sanitize(c.AttachmentID))
 	}
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would delete attachment %s from event %s\n", outfmt.Sanitize(c.AttachmentID), outfmt.Sanitize(c.EventID))
+		fmt.Printf("Would delete attachment %s from event %s%s\n", outfmt.Sanitize(c.AttachmentID), outfmt.Sanitize(c.EventID), mailboxSuffix("in", target))
 		return nil
 	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
-	if err := client.DeleteCalendarAttachment(ctx.Ctx, c.EventID, c.AttachmentID); err != nil {
+	if err := client.DeleteCalendarAttachment(ctx.Ctx, target, c.EventID, c.AttachmentID); err != nil {
 		return err
 	}
 	fmt.Println("Attachment deleted.")

@@ -13,22 +13,10 @@ import (
 
 // mailboxScopedUnawareTools is the expected third class, written out rather than
 // derived so that adding a curated tool has to state which class it falls in.
-// Every one of these reads or writes mailbox-scoped data while ignoring
-// --mailbox, which is why a launch mailbox withholds them.
+// Each of these answers from the signed-in user's own vantage point while
+// ignoring --mailbox, which is why a launch mailbox withholds them.
 var mailboxScopedUnawareTools = map[string]bool{
-	"mail_categories_list": true, "mail_rules_list": true, "mail_ooo_get": true,
-	"mail_flag": true, "mail_categorize": true,
-	"mail_mark":             true,
 	"calendar_availability": true, "calendar_find_times": true,
-	"calendar_attachments_list": true, "calendar_attachments_download": true,
-	"calendar_attachments_add": true, "calendar_attachments_delete": true,
-	"calendar_respond": true, "calendar_create": true, "calendar_update": true,
-	"calendar_delete": true,
-	"contacts_create": true, "contacts_update": true, "contacts_delete": true,
-	"todo_lists_list": true, "todo_list": true, "todo_get": true,
-	"todo_checklist_list": true, "todo_links_list": true,
-	"todo_create": true, "todo_update": true, "todo_complete": true,
-	"todo_delete":   true,
 	"people_search": true,
 }
 
@@ -76,9 +64,9 @@ func TestCuratedToolsAreClassifiedForMailboxScoping(t *testing.T) {
 }
 
 // The finding this closes: a server started with --mailbox appended the flag to
-// every tool call, including tools whose command ignores it, so a delete or a
-// calendar write landed in the operator's own mailbox instead of the one the
-// server was configured for.
+// every tool call, including tools whose command ignores it, so the call acted
+// on the operator's own mailbox instead of the one the server was configured
+// for. Most commands now take the target; the few that cannot are withheld.
 func TestLaunchMailboxWithholdsToolsThatCannotHonourIt(t *testing.T) {
 	allow := func(names ...string) map[string]bool {
 		m := map[string]bool{}
@@ -109,9 +97,17 @@ func TestLaunchMailboxWithholdsToolsThatCannotHonourIt(t *testing.T) {
 
 	// Withholding must be surgical: tools that honour the flag, and tools with no
 	// mailbox dimension at all, are untouched by the choice.
-	for _, want := range []string{"mail_list", "mail_send", "mail_drafts_create"} {
+	for _, want := range []string{
+		"mail_list", "mail_send", "mail_drafts_create", "mail_flag", "contacts_create",
+		"todo_create", "calendar_create", "mail_delete", "todo_delete",
+	} {
 		if !exposed[want] {
 			t.Errorf("tool %q honours --mailbox and should still be exposed", want)
+		}
+	}
+	for _, unwanted := range []string{"people_search", "calendar_availability", "calendar_find_times"} {
+		if exposed[unwanted] {
+			t.Errorf("tool %q cannot honour --mailbox and should be withheld", unwanted)
 		}
 	}
 	for _, want := range []string{"drive_ls", "drive_search", "whoami", "version"} {
@@ -130,7 +126,10 @@ func TestLaunchMailboxWithholdsToolsThatCannotHonourIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildMCPServer: %v", err)
 	}
-	for _, want := range []string{"mail_flag", "contacts_create", "calendar_create", "mail_delete", "todo_create", "todo_delete"} {
+	for _, want := range []string{
+		"mail_flag", "contacts_create", "calendar_create", "mail_delete", "todo_create", "todo_delete",
+		"people_search", "calendar_availability", "calendar_find_times",
+	} {
 		found := false
 		for _, b := range plain {
 			if b.name == want {
@@ -148,13 +147,13 @@ func TestLaunchMailboxWithholdsToolsThatCannotHonourIt(t *testing.T) {
 // it against the wrong mailbox.
 func TestBuildArgv_RefusesAToolThatCannotHonourTheLaunchMailbox(t *testing.T) {
 	b := &toolBinding{
-		name: "mail_flag",
-		path: []string{"mail", "flag"},
-		node: leafByPath(t, "mail", "flag"),
-		tier: tierSafeWrite,
+		name: "people_search",
+		path: []string{"people", "search"},
+		node: leafByPath(t, "people", "search"),
+		tier: tierRead,
 		env:  callEnv{mailbox: "team@example.com"},
 	}
-	_, err := buildArgv(b, map[string]any{"id": "message-id", "status": "flagged"})
+	_, err := buildArgv(b, map[string]any{"query": "ada"})
 	if err == nil {
 		t.Fatal("expected a refusal for a tool that ignores --mailbox")
 	}

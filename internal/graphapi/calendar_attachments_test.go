@@ -40,26 +40,26 @@ func TestCalendarAttachmentLifecycleUsesEventRoute(t *testing.T) {
 		return nil
 	})
 
-	attachments, err := client.ListCalendarAttachments(context.Background(), "event-id")
+	attachments, err := client.ListCalendarAttachments(context.Background(), "", "event-id")
 	if err != nil || len(attachments) != 1 || attachments[0].Name != "notes.txt" {
 		t.Fatalf("ListCalendarAttachments() = %#v, error = %v", attachments, err)
 	}
-	created, err := client.UploadCalendarAttachment(context.Background(), "event-id", "notes.txt", "text/plain", []byte("test"))
+	created, err := client.UploadCalendarAttachment(context.Background(), "", "event-id", "notes.txt", "text/plain", []byte("test"))
 	if err != nil || created.ID != "attachment-id" {
 		t.Fatalf("UploadCalendarAttachment() = %#v, error = %v", created, err)
 	}
-	downloaded, content, err := client.DownloadCalendarAttachment(context.Background(), "event-id", "attachment-id")
+	downloaded, content, err := client.DownloadCalendarAttachment(context.Background(), "", "event-id", "attachment-id")
 	if err != nil || downloaded.Name != "notes.txt" || string(content) != "test" {
 		t.Fatalf("DownloadCalendarAttachment() = %#v, %q, error = %v", downloaded, content, err)
 	}
-	if err := client.DeleteCalendarAttachment(context.Background(), "event-id", "attachment-id"); err != nil {
+	if err := client.DeleteCalendarAttachment(context.Background(), "", "event-id", "attachment-id"); err != nil {
 		t.Fatalf("DeleteCalendarAttachment() error = %v", err)
 	}
 }
 
 func TestUploadCalendarAttachmentRejectsThreeMBFile(t *testing.T) {
 	client := &Client{noWrite: false}
-	_, err := client.UploadCalendarAttachment(context.Background(), "event-id", "large.bin", "application/octet-stream", make([]byte, MaxCalendarAttachmentBytes))
+	_, err := client.UploadCalendarAttachment(context.Background(), "", "event-id", "large.bin", "application/octet-stream", make([]byte, MaxCalendarAttachmentBytes))
 	if err == nil || !strings.Contains(err.Error(), "under 3 MB") {
 		t.Fatalf("error = %v, want size rejection", err)
 	}

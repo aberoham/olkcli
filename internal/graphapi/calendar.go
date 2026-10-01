@@ -241,7 +241,7 @@ func verifyCalendarBody(events []CalendarEvent, preference BodyPreference) error
 	return nil
 }
 
-func (c *Client) CreateEvent(ctx context.Context, opts *CreateEventOptions) (*CalendarEvent, error) {
+func (c *Client) CreateEvent(ctx context.Context, target string, opts *CreateEventOptions) (*CalendarEvent, error) {
 	if opts == nil {
 		return nil, fmt.Errorf("event options are required")
 	}
@@ -336,18 +336,18 @@ func (c *Client) CreateEvent(ctx context.Context, opts *CreateEventOptions) (*Ca
 	var created models.Eventable
 	var err error
 	if opts.CalendarID == "" {
-		created, err = c.inner.Me().Events().Post(ctx, event, nil)
+		created, err = c.targetUser(target).Events().Post(ctx, event, nil)
 	} else {
-		created, err = c.inner.Me().Calendars().ByCalendarId(opts.CalendarID).Events().Post(ctx, event, nil)
+		created, err = c.targetUser(target).Calendars().ByCalendarId(opts.CalendarID).Events().Post(ctx, event, nil)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("creating event: %w", err)
+		return nil, mailboxError("creating event", target, calendarGrantHint, err)
 	}
 	e := convertEvent(created)
 	return &e, nil
 }
 
-func (c *Client) UpdateEvent(ctx context.Context, opts *UpdateEventOptions) (*CalendarEvent, error) {
+func (c *Client) UpdateEvent(ctx context.Context, target string, opts *UpdateEventOptions) (*CalendarEvent, error) {
 	if opts == nil {
 		return nil, fmt.Errorf("event options are required")
 	}
@@ -407,16 +407,16 @@ func (c *Client) UpdateEvent(ctx context.Context, opts *UpdateEventOptions) (*Ca
 		return nil, err
 	}
 	if opts.Body != nil {
-		body, err := c.eventBodyForUpdate(ctx, opts.EventID, opts.Body)
+		body, err := c.eventBodyForUpdate(ctx, target, opts.EventID, opts.Body)
 		if err != nil {
 			return nil, err
 		}
 		event.SetBody(body)
 	}
 
-	updated, err := c.inner.Me().Events().ByEventId(opts.EventID).Patch(ctx, event, nil)
+	updated, err := c.targetUser(target).Events().ByEventId(opts.EventID).Patch(ctx, event, nil)
 	if err != nil {
-		return nil, fmt.Errorf("updating event: %w", err)
+		return nil, mailboxError("updating event", target, calendarGrantHint, err)
 	}
 	e := convertEvent(updated)
 	return &e, nil
@@ -477,8 +477,8 @@ func newEventBody(content string, isHTML bool) models.ItemBodyable {
 // eventBodyForUpdate protects the provider-generated online-meeting section.
 // Graph stores the join information inside the HTML body and warns that
 // replacing it without preserving that section disables the online meeting.
-func (c *Client) eventBodyForUpdate(ctx context.Context, eventID string, input *EventBodyInput) (models.ItemBodyable, error) {
-	current, err := c.GetEvent(ctx, "", eventID, BodyHTML)
+func (c *Client) eventBodyForUpdate(ctx context.Context, target, eventID string, input *EventBodyInput) (models.ItemBodyable, error) {
+	current, err := c.GetEvent(ctx, target, eventID, BodyHTML)
 	if err != nil {
 		return nil, fmt.Errorf("reading existing event body: %w", err)
 	}
@@ -517,40 +517,43 @@ func preserveOnlineMeetingBody(existing, replacement string, replacementHTML boo
 	return "<html><body>" + userHTML + meetingHTML + "</body></html>", nil
 }
 
-func (c *Client) DeleteEvent(ctx context.Context, eventID string) error {
+func (c *Client) DeleteEvent(ctx context.Context, target, eventID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	if err := validateID(eventID, "event ID"); err != nil {
 		return err
 	}
-	err := c.inner.Me().Events().ByEventId(eventID).Delete(ctx, nil)
+	err := c.targetUser(target).Events().ByEventId(eventID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting event: %w", err)
+		return mailboxError("deleting event", target, calendarGrantHint, err)
 	}
 	return nil
 }
 
-func (c *Client) RespondToEvent(ctx context.Context, eventID, response string) error {
+func (c *Client) RespondToEvent(ctx context.Context, target, eventID, response string) error {
 	if err := c.ensureMaySend(); err != nil {
 		return err
 	}
 	if err := validateID(eventID, "event ID"); err != nil {
 		return err
 	}
+	event := c.targetUser(target).Events().ByEventId(eventID)
+	var err error
 	switch response {
 	case "accept":
-		body := users.NewItemEventsItemAcceptPostRequestBody()
-		return c.inner.Me().Events().ByEventId(eventID).Accept().Post(ctx, body, nil)
+		err = event.Accept().Post(ctx, users.NewItemEventsItemAcceptPostRequestBody(), nil)
 	case "decline":
-		body := users.NewItemEventsItemDeclinePostRequestBody()
-		return c.inner.Me().Events().ByEventId(eventID).Decline().Post(ctx, body, nil)
+		err = event.Decline().Post(ctx, users.NewItemEventsItemDeclinePostRequestBody(), nil)
 	case "tentative":
-		body := users.NewItemEventsItemTentativelyAcceptPostRequestBody()
-		return c.inner.Me().Events().ByEventId(eventID).TentativelyAccept().Post(ctx, body, nil)
+		err = event.TentativelyAccept().Post(ctx, users.NewItemEventsItemTentativelyAcceptPostRequestBody(), nil)
 	default:
 		return fmt.Errorf("invalid response: %q (must be accept, decline, or tentative)", response)
 	}
+	if err != nil && target != "" {
+		return sharedMailboxItemError("responding to event", target, calendarGrantHint, err)
+	}
+	return err
 }
 
 // ListCalendars returns calendars from the target mailbox, or the signed-in
