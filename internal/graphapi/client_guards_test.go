@@ -28,7 +28,18 @@ func TestNoWriteGuardBlocksMutations(t *testing.T) {
 		{"DeleteContact", func() error { return c.DeleteContact(ctx, "id") }},
 		{"DeleteDriveItem", func() error { return c.DeleteDriveItem(ctx, "d", "i") }},
 		{"DeleteTodoTask", func() error { return c.DeleteTodoTask(ctx, "l", "t") }},
-		{"CreateMailFolder", func() error { _, err := c.CreateMailFolder(ctx, "n"); return err }},
+		{"CreateMailFolder", func() error { _, err := c.CreateMailFolder(ctx, "", "", "n"); return err }},
+		{"CreateMailFolder in a shared mailbox", func() error {
+			_, err := c.CreateMailFolder(ctx, "shared@example.com", "p", "n")
+			return err
+		}},
+		{"RenameMailFolder", func() error { _, err := c.RenameMailFolder(ctx, "", "f", "n"); return err }},
+		{"RenameMailFolder in a shared mailbox", func() error {
+			_, err := c.RenameMailFolder(ctx, "shared@example.com", "f", "n")
+			return err
+		}},
+		{"DeleteMailFolder", func() error { return c.DeleteMailFolder(ctx, "", "f") }},
+		{"DeleteMailFolder from a shared mailbox", func() error { return c.DeleteMailFolder(ctx, "shared@example.com", "f") }},
 		{"CreateUploadSession", func() error { _, err := c.CreateUploadSession(ctx, "d", "p", false); return err }},
 		{"CreateEvent", func() error {
 			_, err := c.CreateEvent(ctx, &CreateEventOptions{Subject: "s", Start: time.Now(), End: time.Now(), Attendees: []string{"a@b.com"}})

@@ -90,9 +90,9 @@ olk mail move <ID> <FOLDER_ID_OR_PATH>                                 # e.g. In
 olk mail delete <ID> --force
 olk mail mark <ID> --read | --unread
 olk mail folders                                                          # list all visible folders recursively
-olk mail folders create -n "Project X"
-olk mail folders rename <FOLDER_ID> -n "New Name"
-olk mail folders delete <FOLDER_ID> --force
+olk mail folders create -n "Project X" [--parent FOLDER_ID_OR_PATH]       # e.g. --parent Inbox/2026
+olk mail folders rename <FOLDER_ID_OR_PATH> -n "New Name"
+olk mail folders delete <FOLDER_ID_OR_PATH> --force
 olk mail attachments <ID>                                                 # list attachments
 olk mail attachments <ID> --save [--out DIR]                             # download all
 olk mail attachments <ID> --attachment-id <ATT_ID> [--out DIR]           # download one
@@ -170,10 +170,18 @@ olk mail list --folder inbox --top 1000 --order oldest --json --results-only
 mailbox and require `Mail.ReadWrite.Shared` plus Full Access. The message ID,
 and for a move the destination folder, must belong to that mailbox.
 
-`--folder` and the `mail move` destination accept slash-separated display-name
-paths such as `Inbox/2026`; paths are resolved to Graph folder IDs by walking
-each level. A single display name such as `2026` is not a path and can be
-ambiguous, so use either its ID or its full path.
+`--folder`, the `mail move` destination, `mail folders create --parent` and the
+folder argument of `mail folders rename` and `delete` accept slash-separated
+display-name paths such as `Inbox/2026`; paths are resolved to Graph folder IDs
+by walking each level. A single display name such as `2026` is not a path and
+can be ambiguous, so use either its ID or its full path.
+
+`mail folders create`, `rename` and `delete` honour `--mailbox` and need
+`Mail.ReadWrite.Shared` plus Full Access there. Create makes a top-level folder
+unless `--parent` is given. A folder name cannot contain `/`. Rename and delete
+refuse `inbox`, `archive`, `deleteditems` and `junkemail`. `--dry-run` names the
+mailbox and the parent as typed without contacting Graph, so it does not confirm
+that the parent exists.
 
 `--order` accepts `newest` (the default) or `oldest`. `--top` bounds the total
 result, not each provider page. `olk` follows pages internally until it reaches
@@ -427,7 +435,7 @@ the shared mailbox and needs `Mail.ReadWrite.Shared` plus Exchange Full Access,
 but not `Mail.Send.Shared`, Send As, or Send on Behalf Of. Sending that draft
 later is a separate action and does require the sending grants.
 
-Sending, replying, forwarding, moving and deleting messages and the draft commands are the writes that honour `--mailbox`. The calendar, contact and folder writes ignore it, as do the commands that organise mail in place — flag, categorise, mark — and all of them act on the signed-in user's own mailbox.
+Sending, replying, forwarding, moving and deleting messages, the draft commands and creating, renaming and deleting folders are the writes that honour `--mailbox`. The calendar and contact writes ignore it, as do the commands that organise mail in place — flag, categorise, mark — and all of them act on the signed-in user's own mailbox.
 
 ```bash
 # One-time login with shared scopes
@@ -438,6 +446,7 @@ olk mail list --mailbox boss@example.com
 olk mail get <ID> --mailbox boss@example.com
 olk mail search "from:partner@example.com" --mailbox boss@example.com
 olk mail folders --mailbox boss@example.com
+olk mail folders create --mailbox team@example.com --name "11 Nov" --parent "Inbox/2026"
 olk mail attachments <ID> --mailbox boss@example.com   # list; also --save / --attachment-id to download
 
 # Send as a shared mailbox (needs Mail.Send.Shared + Send As + Full Access)
@@ -468,7 +477,7 @@ export OLK_MAILBOX=boss@example.com
 ```
 
 - The target must have granted **Full Access** via M365 Admin Center → Mailbox permissions; the calling token must carry the matching `.Shared` scope.
-- Not every write honours it. Send, reply, forward, move, delete and the draft commands do; flagging, categorising and marking mail do not, nor do the folder, calendar and contact writes, which always act on the signed-in user's own mailbox.
+- Not every write honours it. Send, reply, forward, move, delete, the draft commands and the folder writes do; flagging, categorising and marking mail do not, nor do the calendar and contact writes, which always act on the signed-in user's own mailbox.
 
 ## Shortcuts
 
