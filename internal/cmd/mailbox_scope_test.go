@@ -96,7 +96,7 @@ var mailboxScopedCommands = []mailboxScopedCommand{
 
 	{
 		path:   []string{"contacts", "create"},
-		args:   []string{"--first-name", "Ada", "--last-name", "Lovelace"},
+		args:   []string{"--first-name", "Sample", "--last-name", "Contact"},
 		dryRun: true,
 	},
 	{path: []string{"contacts", "update"}, args: []string{"contact-id", "--company", "Example"}},

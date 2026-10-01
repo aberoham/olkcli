@@ -153,7 +153,7 @@ func TestBuildArgv_RefusesAToolThatCannotHonourTheLaunchMailbox(t *testing.T) {
 		tier: tierRead,
 		env:  callEnv{mailbox: "team@example.com"},
 	}
-	_, err := buildArgv(b, map[string]any{"query": "ada"})
+	_, err := buildArgv(b, map[string]any{"query": "sample"})
 	if err == nil {
 		t.Fatal("expected a refusal for a tool that ignores --mailbox")
 	}
