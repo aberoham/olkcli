@@ -46,6 +46,7 @@ var advertisedCapabilities = []string{
 	"mcp.delegated-mailbox-v1",
 	"cli.version-namespace-v1",
 	"mailbox.target-all-scoped-commands-v1",
+	"mailbox.dry-run-all-writes-v1",
 }
 
 func (c *VersionCmd) Run(ctx *RunContext) error {
