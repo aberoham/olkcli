@@ -51,7 +51,10 @@ olk mail mark <ID> read|unread
 olk mail move <ID> ID_OR_PATH [--mailbox EMAIL]
 olk mail delete <ID> --force [--mailbox EMAIL]
 olk mail attachments <ID> [--save] [--out DIR] [--attachment-id ID]
-olk mail folders list|create|rename|delete  # list traverses visible child folders
+olk mail folders list                       # traverses visible child folders
+olk mail folders create --name NAME [--parent ID_OR_PATH] [--mailbox EMAIL]
+olk mail folders rename ID_OR_PATH --name NAME [--mailbox EMAIL]
+olk mail folders delete ID_OR_PATH --force [--mailbox EMAIL]
 olk mail drafts list|create|send|delete|attach|update
 olk mail drafts create --to EMAIL --subject SUBJECT --body '<img src="cid:logo">' --html --inline logo=logo.png
 olk mail flag <ID> flagged|complete|notFlagged
@@ -64,6 +67,26 @@ olk mail rules list|create|delete
 `mail list` defaults to the Inbox when `--folder` is omitted. The `olk inbox`
 and `olk ls` shortcuts use the same default; pass `--folder` to list another
 folder.
+
+`mail folders create`, `rename` and `delete` act in the `--mailbox` mailbox when
+one is given, which needs `Mail.ReadWrite.Shared` and Full Access there. Create
+makes a top-level folder unless `--parent` names the containing folder:
+
+```bash
+olk mail folders create --mailbox shared@example.com --name "11 Nov" --parent "Inbox/2026"
+olk mail folders rename "Inbox/2026/11 Nov" --name "11 November" --mailbox shared@example.com
+olk mail folders delete "Inbox/2026/11 November" --force --mailbox shared@example.com
+```
+
+`--parent` and the folder argument of rename and delete take a folder ID, a
+well-known name such as `inbox`, or a slash-separated display-name path, resolved
+in the target mailbox the way `mail move` resolves its destination. A single
+display name is not a path; use the folder's ID or its full path. A folder name
+cannot contain `/`, because such a folder could not be addressed by path
+afterwards. Rename and delete refuse the well-known names `inbox`, `archive`,
+`deleteditems` and `junkemail`; a folder addressed by its ID is not checked
+against them and is left to Graph. `--dry-run` prints the mailbox and the parent
+as typed without contacting Graph, so it does not confirm that the parent exists.
 
 To edit an existing draft without sending it:
 

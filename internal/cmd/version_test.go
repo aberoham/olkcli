@@ -34,6 +34,7 @@ func TestVersionJSONAdvertisesStructuredMailCapabilities(t *testing.T) {
 		"contacts.provider-metadata-v1",
 		"cli.json-error-v1",
 		"mail.folders.well-known-v1",
+		"mail.folders.delegated-writes-v1",
 		"mail.get.parent-folder-v1",
 		"mail.ids.immutable-v1",
 		"mail.message-observations-v1",

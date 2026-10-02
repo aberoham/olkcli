@@ -79,9 +79,10 @@ one listed from that mailbox; one taken from your own mailbox will not resolve.
 `mail move` and `mail delete` honour `--mailbox`; moving or deleting a
 shared-mailbox message needs `Mail.ReadWrite.Shared` and Full Access, and the
 message ID (and, for a move, the destination folder) must belong to that
-mailbox. Calendar writes, contact writes, folder
-writes, and the other commands that organise mail in place — flag, categorise,
-mark — remain scoped to the signed-in user; they do not read `--mailbox`.
+mailbox. `mail folders create`, `rename` and `delete` honour it under the same
+scope and grant. Calendar writes, contact writes, and the commands that organise
+mail in place — flag, categorise, mark — remain scoped to the signed-in user;
+they do not read `--mailbox`.
 
 ## macOS Keychain
 

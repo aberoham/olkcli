@@ -699,71 +699,103 @@ func (c *Client) GetWellKnownMailFolder(ctx context.Context, target, name string
 	return &folder, nil
 }
 
-// CreateMailFolder creates a new mail folder.
-func (c *Client) CreateMailFolder(ctx context.Context, displayName string) (*MailFolder, error) {
+const folderGrantHint = "Creating, renaming or deleting folders in another mailbox needs the " +
+	"Mail.ReadWrite.Shared scope (sign in again with --scope Mail.ReadWrite.Shared) and Full Access " +
+	"on that mailbox in Exchange. A folder ID must be one listed from that mailbox"
+
+func mailFolderWriteError(action, target string, err error) error {
+	if target != "" {
+		return sharedMailboxItemError(action, target, folderGrantHint, err)
+	}
+	return fmt.Errorf("%s: %w", action, err)
+}
+
+// refuseWellKnownMailFolder rejects a rename or delete addressed to one of the
+// protected well-known names, without making a request. The check is on the name
+// alone: a folder addressed by its opaque ID is not recognised here and is left
+// to Graph.
+func refuseWellKnownMailFolder(verb, folderID string) error {
+	if protectedWellKnownMailFolders[strings.ToLower(folderID)] {
+		return fmt.Errorf("refusing to %s the well-known folder %q", verb, folderID)
+	}
+	return nil
+}
+
+// CreateMailFolder creates a mail folder in the target mailbox, or in the
+// signed-in user's own mailbox when target is empty. An empty parentID creates
+// the folder at the mailbox root; otherwise it becomes a child of that folder,
+// which must belong to the same mailbox.
+func (c *Client) CreateMailFolder(ctx context.Context, target, parentID, displayName string) (*MailFolder, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
 	folder := models.NewMailFolder()
 	folder.SetDisplayName(&displayName)
 
-	created, err := c.inner.Me().MailFolders().Post(ctx, folder, nil)
+	const action = "creating mail folder"
+	var created models.MailFolderable
+	var err error
+	if parentID == "" {
+		created, err = c.targetUser(target).MailFolders().Post(ctx, folder, nil)
+	} else {
+		if err := validateID(parentID, "parent folder ID"); err != nil {
+			return nil, err
+		}
+		created, err = c.targetUser(target).MailFolders().ByMailFolderId(parentID).ChildFolders().Post(ctx, folder, nil)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("creating mail folder: %w", err)
+		return nil, mailFolderWriteError(action, target, err)
 	}
-
-	result := MailFolder{
-		DisplayName: derefStr(created.GetDisplayName()),
+	if created == nil {
+		return nil, fmt.Errorf("%s: %w", action, errNilMailFolderResponse)
 	}
-	if created.GetId() != nil {
-		result.ID = *created.GetId()
-	}
-	if created.GetTotalItemCount() != nil {
-		result.TotalCount = *created.GetTotalItemCount()
-	}
-	if created.GetUnreadItemCount() != nil {
-		result.UnreadCount = *created.GetUnreadItemCount()
-	}
+	result := convertMailFolder(created)
 	return &result, nil
 }
 
-// RenameMailFolder renames a mail folder.
-func (c *Client) RenameMailFolder(ctx context.Context, folderID, displayName string) (*MailFolder, error) {
+// RenameMailFolder renames a folder in the target mailbox, or in the signed-in
+// user's own mailbox when target is empty.
+func (c *Client) RenameMailFolder(ctx context.Context, target, folderID, displayName string) (*MailFolder, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
 	if err := validateID(folderID, "folder ID"); err != nil {
+		return nil, err
+	}
+	if err := refuseWellKnownMailFolder("rename", folderID); err != nil {
 		return nil, err
 	}
 
 	folder := models.NewMailFolder()
 	folder.SetDisplayName(&displayName)
 
-	updated, err := c.inner.Me().MailFolders().ByMailFolderId(folderID).Patch(ctx, folder, nil)
+	const action = "renaming mail folder"
+	updated, err := c.targetUser(target).MailFolders().ByMailFolderId(folderID).Patch(ctx, folder, nil)
 	if err != nil {
-		return nil, fmt.Errorf("renaming mail folder: %w", err)
+		return nil, mailFolderWriteError(action, target, err)
 	}
-
-	result := MailFolder{
-		DisplayName: derefStr(updated.GetDisplayName()),
+	if updated == nil {
+		return nil, fmt.Errorf("%s: %w", action, errNilMailFolderResponse)
 	}
-	if updated.GetId() != nil {
-		result.ID = *updated.GetId()
-	}
+	result := convertMailFolder(updated)
 	return &result, nil
 }
 
-// DeleteMailFolder deletes a mail folder.
-func (c *Client) DeleteMailFolder(ctx context.Context, folderID string) error {
+// DeleteMailFolder deletes a folder from the target mailbox, or from the
+// signed-in user's own mailbox when target is empty.
+func (c *Client) DeleteMailFolder(ctx context.Context, target, folderID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	if err := validateID(folderID, "folder ID"); err != nil {
 		return err
 	}
-	err := c.inner.Me().MailFolders().ByMailFolderId(folderID).Delete(ctx, nil)
+	if err := refuseWellKnownMailFolder("delete", folderID); err != nil {
+		return err
+	}
+	err := c.targetUser(target).MailFolders().ByMailFolderId(folderID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting mail folder: %w", err)
+		return mailFolderWriteError("deleting mail folder", target, err)
 	}
 	return nil
 }
