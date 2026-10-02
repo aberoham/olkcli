@@ -24,8 +24,9 @@ type TodoCmd struct {
 // clearSentinel is the value users pass to clear optional fields (e.g. --due none).
 const clearSentinel = "none"
 
-// resolveListID returns the provided listID, or auto-detects the default task list.
-func resolveListID(ctx *RunContext, listID string) (string, error) {
+// resolveListID returns the provided listID, or auto-detects the default task list
+// of the target mailbox.
+func resolveListID(ctx *RunContext, target, listID string) (string, error) {
 	if listID != "" {
 		return listID, nil
 	}
@@ -33,7 +34,7 @@ func resolveListID(ctx *RunContext, listID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lists, err := client.ListTodoLists(ctx.Ctx)
+	lists, err := client.ListTodoLists(ctx.Ctx, target)
 	if err != nil {
 		return "", fmt.Errorf("auto-detecting task list: %w", err)
 	}
@@ -54,12 +55,16 @@ type TodoListsCmd struct {
 type TodoListsListCmd struct{}
 
 func (c *TodoListsListCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
 
-	lists, err := client.ListTodoLists(ctx.Ctx)
+	lists, err := client.ListTodoLists(ctx.Ctx, target)
 	if err != nil {
 		return err
 	}
@@ -92,6 +97,10 @@ type TodoListsCreateCmd struct {
 }
 
 func (c *TodoListsCreateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if c.Name == "" {
 		return fmt.Errorf("list name cannot be empty")
 	}
@@ -102,11 +111,11 @@ func (c *TodoListsCreateCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would create task list %q\n", outfmt.Sanitize(c.Name))
+		fmt.Printf("Would create task list %q%s\n", outfmt.Sanitize(c.Name), mailboxSuffix("in", target))
 		return nil
 	}
 
-	list, err := client.CreateTodoList(ctx.Ctx, c.Name)
+	list, err := client.CreateTodoList(ctx.Ctx, target, c.Name)
 	if err != nil {
 		return err
 	}
@@ -121,6 +130,10 @@ type TodoListsDeleteCmd struct {
 }
 
 func (c *TodoListsDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !ctx.Flags.Force {
 		return fmt.Errorf("delete task list %s: use --force to confirm deletion", outfmt.Sanitize(outfmt.Truncate(c.ID, 30)))
 	}
@@ -131,11 +144,11 @@ func (c *TodoListsDeleteCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would delete task list %s\n", outfmt.Sanitize(c.ID))
+		fmt.Printf("Would delete task list %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
 		return nil
 	}
 
-	err = client.DeleteTodoList(ctx.Ctx, c.ID)
+	err = client.DeleteTodoList(ctx.Ctx, target, c.ID)
 	if err != nil {
 		return err
 	}
@@ -152,7 +165,11 @@ type TodoListCmd struct {
 }
 
 func (c *TodoListCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -162,7 +179,7 @@ func (c *TodoListCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	tasks, err := client.ListTodoTasks(ctx.Ctx, listID, c.Top, c.Status)
+	tasks, err := client.ListTodoTasks(ctx.Ctx, target, listID, c.Top, c.Status)
 	if err != nil {
 		return err
 	}
@@ -196,7 +213,11 @@ type TodoGetCmd struct {
 }
 
 func (c *TodoGetCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -206,7 +227,7 @@ func (c *TodoGetCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	task, err := client.GetTodoTask(ctx.Ctx, listID, c.ID)
+	task, err := client.GetTodoTask(ctx.Ctx, target, listID, c.ID)
 	if err != nil {
 		return err
 	}
@@ -265,13 +286,18 @@ type TodoCreateCmd struct {
 }
 
 func (c *TodoCreateCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
 		fmt.Printf("Would create task:\n  Title: %s\n", outfmt.Sanitize(c.Title))
+		printDryRunMailbox(target)
 		if c.Due != "" {
 			fmt.Printf("  Due: %s\n", outfmt.Sanitize(c.Due))
 		}
@@ -301,7 +327,7 @@ func (c *TodoCreateCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	task, err := client.CreateTodoTask(ctx.Ctx, listID, c.Title, c.Due, c.Importance, c.Body, c.Start, c.Reminder, c.Recurrence, c.Categories)
+	task, err := client.CreateTodoTask(ctx.Ctx, target, listID, c.Title, c.Due, c.Importance, c.Body, c.Start, c.Reminder, c.Recurrence, c.Categories)
 	if err != nil {
 		return err
 	}
@@ -317,13 +343,17 @@ type TodoCompleteCmd struct {
 }
 
 func (c *TodoCompleteCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would complete task %s\n", outfmt.Sanitize(c.ID))
+		fmt.Printf("Would complete task %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -332,7 +362,7 @@ func (c *TodoCompleteCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	err = client.CompleteTodoTask(ctx.Ctx, listID, c.ID)
+	err = client.CompleteTodoTask(ctx.Ctx, target, listID, c.ID)
 	if err != nil {
 		return err
 	}
@@ -356,7 +386,11 @@ type TodoUpdateCmd struct {
 }
 
 func (c *TodoUpdateCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -419,7 +453,7 @@ func (c *TodoUpdateCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would update task %s\n", outfmt.Sanitize(c.ID))
+		fmt.Printf("Would update task %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -428,7 +462,7 @@ func (c *TodoUpdateCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	task, err := client.UpdateTodoTask(ctx.Ctx, listID, c.ID, title, due, importance, body, start, reminder, recurrence, categories)
+	task, err := client.UpdateTodoTask(ctx.Ctx, target, listID, c.ID, title, due, importance, body, start, reminder, recurrence, categories)
 	if err != nil {
 		return err
 	}
@@ -444,17 +478,21 @@ type TodoDeleteCmd struct {
 }
 
 func (c *TodoDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !ctx.Flags.Force {
 		return fmt.Errorf("delete task %s: use --force to confirm deletion", outfmt.Sanitize(c.ID))
 	}
 
-	listID, err := resolveListID(ctx, c.List)
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would delete task %s\n", outfmt.Sanitize(c.ID))
+		fmt.Printf("Would delete task %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -463,7 +501,7 @@ func (c *TodoDeleteCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	err = client.DeleteTodoTask(ctx.Ctx, listID, c.ID)
+	err = client.DeleteTodoTask(ctx.Ctx, target, listID, c.ID)
 	if err != nil {
 		return err
 	}

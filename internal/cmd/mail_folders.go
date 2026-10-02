@@ -91,7 +91,7 @@ func validateMailFolderName(name, hint string) error {
 	return nil
 }
 
-// mailboxSuffix returns the phrase that names a delegated mailbox in a folder
+// mailboxSuffix returns the phrase that names a delegated mailbox in a
 // command's output, and nothing for the signed-in user's own mailbox so that
 // output without --mailbox is unchanged.
 func mailboxSuffix(preposition, target string) string {

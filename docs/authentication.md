@@ -80,9 +80,20 @@ one listed from that mailbox; one taken from your own mailbox will not resolve.
 shared-mailbox message needs `Mail.ReadWrite.Shared` and Full Access, and the
 message ID (and, for a move, the destination folder) must belong to that
 mailbox. `mail folders create`, `rename` and `delete` honour it under the same
-scope and grant. Calendar writes, contact writes, and the commands that organise
-mail in place — flag, categorise, mark — remain scoped to the signed-in user;
-they do not read `--mailbox`.
+scope and grant, as do the commands that organise mail in place: `mail mark`,
+`flag`, `categorize` and `importance`.
+
+Calendar writes and event attachments honour `--mailbox` and need
+`Calendars.ReadWrite.Shared` plus delegate or shared access to that calendar.
+Contact writes need `Contacts.ReadWrite.Shared` plus access to the contacts
+folder. To Do, inbox rules, categories and automatic replies are sent to the
+named mailbox as well, but Microsoft documents no shared-mailbox access for
+them: `Tasks.ReadWrite.Shared` exists with no Graph method published under it,
+and mailbox settings have no shared scope at all. Graph may refuse those; `olk`
+reports the refusal and never falls back to your own mailbox.
+
+`people search`, `calendar availability` and `calendar find-times` do not read
+`--mailbox`. Each asks on behalf of the signed-in user.
 
 ## macOS Keychain
 

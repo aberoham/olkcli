@@ -190,6 +190,10 @@ type CalendarCreateCmd struct {
 }
 
 func (c *CalendarCreateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	reminderOn, err := calendarReminder(c.NoReminder, c.ReminderMinutes)
 	if err != nil {
 		return err
@@ -226,6 +230,7 @@ func (c *CalendarCreateCmd) Run(ctx *RunContext) error {
 
 	if ctx.Flags.DryRun {
 		fmt.Printf("Would create event:\n  Subject: %s\n  Start: %s\n  End: %s\n", outfmt.Sanitize(c.Subject), c.Start, c.End)
+		printDryRunMailbox(target)
 		if c.Calendar != "" {
 			fmt.Printf("  Calendar: %s\n", outfmt.Sanitize(c.Calendar))
 		}
@@ -238,7 +243,7 @@ func (c *CalendarCreateCmd) Run(ctx *RunContext) error {
 		return nil
 	}
 
-	event, err := client.CreateEvent(ctx.Ctx, &graphapi.CreateEventOptions{
+	event, err := client.CreateEvent(ctx.Ctx, target, &graphapi.CreateEventOptions{
 		CalendarID: c.Calendar, Subject: c.Subject, Start: start, End: end,
 		Location: c.Location, Attendees: c.Attendees, IsAllDay: c.AllDay, TimeZone: c.EventTimeZone,
 		IsOnlineMeeting: c.OnlineMeeting, Recurrence: c.Recurrence,
@@ -272,6 +277,10 @@ type CalendarUpdateCmd struct {
 }
 
 func (c *CalendarUpdateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	reminderOn, err := calendarReminder(c.NoReminder, c.ReminderMinutes)
 	if err != nil {
 		return err
@@ -338,7 +347,7 @@ func (c *CalendarUpdateCmd) Run(ctx *RunContext) error {
 	} else if c.Body != nil {
 		body = &graphapi.EventBodyInput{Content: *c.Body, HTML: c.HTML}
 	}
-	event, err := client.UpdateEvent(ctx.Ctx, &graphapi.UpdateEventOptions{
+	event, err := client.UpdateEvent(ctx.Ctx, target, &graphapi.UpdateEventOptions{
 		EventID: c.ID, Subject: subject, Start: start, End: end, Location: location,
 		AllDay: allDay, TimeZone: c.EventTimeZone, ReminderOn: reminderOn, ReminderMinutes: c.ReminderMinutes, Body: body,
 	})
@@ -385,6 +394,10 @@ type CalendarDeleteCmd struct {
 }
 
 func (c *CalendarDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -394,7 +407,7 @@ func (c *CalendarDeleteCmd) Run(ctx *RunContext) error {
 		return fmt.Errorf("delete event %s: use --force to confirm deletion", outfmt.Sanitize(c.ID))
 	}
 
-	err = client.DeleteEvent(ctx.Ctx, c.ID)
+	err = client.DeleteEvent(ctx.Ctx, target, c.ID)
 	if err != nil {
 		return err
 	}
@@ -409,12 +422,16 @@ type CalendarRespondCmd struct {
 }
 
 func (c *CalendarRespondCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
 
-	err = client.RespondToEvent(ctx.Ctx, c.ID, c.Response)
+	err = client.RespondToEvent(ctx.Ctx, target, c.ID, c.Response)
 	if err != nil {
 		return err
 	}

@@ -436,7 +436,14 @@ the shared mailbox and needs `Mail.ReadWrite.Shared` plus Exchange Full Access,
 but not `Mail.Send.Shared`, Send As, or Send on Behalf Of. Sending that draft
 later is a separate action and does require the sending grants.
 
-Sending, replying, forwarding, moving and deleting messages, the draft commands and creating, renaming and deleting folders are the writes that honour `--mailbox`. The calendar and contact writes ignore it, as do the commands that organise mail in place — flag, categorise, mark — and all of them act on the signed-in user's own mailbox.
+Every mailbox-scoped command honours `--mailbox`: mail (including `mark`, `flag`, `categorize` and `importance`), folders, drafts, calendar, contacts, To Do, inbox rules, categories and automatic replies. IDs are per-mailbox, so list an item from the mailbox you then act on. Three commands ignore the flag because they answer from your own vantage point: `people search`, `calendar availability` and `calendar find-times`.
+
+What each needs on another mailbox:
+
+- Marking, flagging, categorising and setting importance: `Mail.ReadWrite.Shared` and Full Access.
+- Calendar writes and event attachments: `Calendars.ReadWrite.Shared` and delegate or shared access to the calendar.
+- Contact writes: `Contacts.ReadWrite.Shared` and access to the contacts folder.
+- To Do, inbox rules, categories and automatic replies: the request goes to the named mailbox, but Microsoft documents no shared-mailbox access for these, so Graph may refuse it.
 
 ```bash
 # One-time login with shared scopes
@@ -467,18 +474,23 @@ olk mail reply <ID> --mailbox team@example.com --body "..." --draft
 olk mail drafts create --mailbox team@example.com --to person@example.com --subject "..." --body "..."
 olk mail drafts list --mailbox team@example.com
 
-# Calendar (also: view, get, calendars)
+# Calendar (also: view, get, calendars, create, update, delete, respond, attachments)
 olk calendar events --mailbox boss@example.com
+olk calendar create --mailbox boss@example.com --subject "Review" --start 2026-11-02T10:00:00Z --end 2026-11-02T11:00:00Z
 
-# Contacts (also: get, search)
+# Contacts (also: get, search, create, update, delete)
 olk contacts list --mailbox boss@example.com
+
+# Organise mail in place
+olk mail mark <ID> --read --mailbox team@example.com
+olk mail categorize <ID> --categories "Answered" --mailbox team@example.com
 
 # Persist for the shell session
 export OLK_MAILBOX=boss@example.com
 ```
 
 - The target must have granted **Full Access** via M365 Admin Center → Mailbox permissions; the calling token must carry the matching `.Shared` scope.
-- Not every write honours it. Send, reply, forward, move, delete, the draft commands and the folder writes do; flagging, categorising and marking mail do not, nor do the calendar and contact writes, which always act on the signed-in user's own mailbox.
+- Every mailbox-scoped write honours it. A dry run names the mailbox it would act on.
 
 ## Shortcuts
 
@@ -508,7 +520,7 @@ export OLK_MAILBOX=boss@example.com
 | `--json` | `OLK_JSON` | JSON output |
 | `--plain` | `OLK_PLAIN` | TSV output |
 | `--account EMAIL` | `OLK_ACCOUNT` | Use a specific account |
-| `--mailbox EMAIL` | `OLK_MAILBOX` | Target another user's mailbox (delegated read; mail/calendar/contacts). Needs the matching `.Shared` scope + Exchange Full Access |
+| `--mailbox EMAIL` | `OLK_MAILBOX` | Run every mailbox-scoped command (mail, folders, calendar, contacts, To Do, rules, categories, automatic replies) against another user's mailbox. Needs the matching `.Shared` scope where one exists + Exchange access to that mailbox |
 | `--results-only` | `OLK_RESULTS_ONLY` | Unwrap JSON envelope |
 | `--select FIELDS` | `OLK_SELECT` | Command-specific field projection; `mail list --json` projects both the Graph request and JSON result |
 | `--force` | `OLK_FORCE` | Skip confirmations |
