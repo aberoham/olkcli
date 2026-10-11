@@ -21,7 +21,11 @@ type TodoLinksListCmd struct {
 }
 
 func (c *TodoLinksListCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -31,7 +35,7 @@ func (c *TodoLinksListCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	links, err := client.ListLinkedResources(ctx.Ctx, listID, c.TaskID)
+	links, err := client.ListLinkedResources(ctx.Ctx, target, listID, c.TaskID)
 	if err != nil {
 		return err
 	}
@@ -66,17 +70,21 @@ type TodoLinksCreateCmd struct {
 }
 
 func (c *TodoLinksCreateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if c.URL != "" && !strings.HasPrefix(c.URL, "http://") && !strings.HasPrefix(c.URL, "https://") {
 		return fmt.Errorf("URL must use http:// or https:// scheme")
 	}
 
-	listID, err := resolveListID(ctx, c.List)
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would create linked resource %q on task %s\n", outfmt.Sanitize(c.Name), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would create linked resource %q on task %s%s\n", outfmt.Sanitize(c.Name), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -85,7 +93,7 @@ func (c *TodoLinksCreateCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	link, err := client.CreateLinkedResource(ctx.Ctx, listID, c.TaskID, c.Name, c.AppName, c.ExternalID, c.URL)
+	link, err := client.CreateLinkedResource(ctx.Ctx, target, listID, c.TaskID, c.Name, c.AppName, c.ExternalID, c.URL)
 	if err != nil {
 		return err
 	}
@@ -101,18 +109,22 @@ type TodoLinksDeleteCmd struct {
 	List       string `help:"Task list ID" env:"OLK_TODO_LIST"`
 }
 
-func (c *TodoLinksDeleteCmd) Run(ctx *RunContext) error {
+func (c *TodoLinksDeleteCmd) Run(ctx *RunContext) error { //nolint:dupl // same steps as the checklist delete; each command needs its own Run
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !ctx.Flags.Force {
 		return fmt.Errorf("delete linked resource %s: use --force to confirm deletion", outfmt.Sanitize(outfmt.Truncate(c.ResourceID, 30)))
 	}
 
-	listID, err := resolveListID(ctx, c.List)
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would delete linked resource %s from task %s\n", outfmt.Sanitize(c.ResourceID), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would delete linked resource %s from task %s%s\n", outfmt.Sanitize(c.ResourceID), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -121,7 +133,7 @@ func (c *TodoLinksDeleteCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	err = client.DeleteLinkedResource(ctx.Ctx, listID, c.TaskID, c.ResourceID)
+	err = client.DeleteLinkedResource(ctx.Ctx, target, listID, c.TaskID, c.ResourceID)
 	if err != nil {
 		return err
 	}

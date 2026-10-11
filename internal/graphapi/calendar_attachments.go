@@ -19,14 +19,15 @@ type CalendarAttachment struct {
 	Size        int32  `json:"size"`
 }
 
-// ListCalendarAttachments lists attachments on the signed-in user's event.
-func (c *Client) ListCalendarAttachments(ctx context.Context, eventID string) ([]CalendarAttachment, error) {
+// ListCalendarAttachments lists attachments on an event in the target mailbox, or
+// in the signed-in user's own mailbox when target is empty.
+func (c *Client) ListCalendarAttachments(ctx context.Context, target, eventID string) ([]CalendarAttachment, error) {
 	if err := validateID(eventID, "event ID"); err != nil {
 		return nil, err
 	}
-	resp, err := c.inner.Me().Events().ByEventId(eventID).Attachments().Get(ctx, nil)
+	resp, err := c.targetUser(target).Events().ByEventId(eventID).Attachments().Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing event attachments: %w", err)
+		return nil, mailboxError("listing event attachments", target, calendarGrantHint, err)
 	}
 	if resp == nil {
 		return []CalendarAttachment{}, nil
@@ -42,7 +43,7 @@ func (c *Client) ListCalendarAttachments(ctx context.Context, eventID string) ([
 // UploadCalendarAttachment adds a small file attachment to an event. Graph's
 // simple endpoint accepts files strictly smaller than 3 MB; upload sessions
 // are intentionally left for a separate large-file implementation.
-func (c *Client) UploadCalendarAttachment(ctx context.Context, eventID, name, contentType string, content []byte) (*CalendarAttachment, error) {
+func (c *Client) UploadCalendarAttachment(ctx context.Context, target, eventID, name, contentType string, content []byte) (*CalendarAttachment, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -58,9 +59,9 @@ func (c *Client) UploadCalendarAttachment(ctx context.Context, eventID, name, co
 	attachment.SetContentType(&contentType)
 	attachment.SetContentBytes(content)
 
-	created, err := c.inner.Me().Events().ByEventId(eventID).Attachments().Post(ctx, attachment, nil)
+	created, err := c.targetUser(target).Events().ByEventId(eventID).Attachments().Post(ctx, attachment, nil)
 	if err != nil {
-		return nil, fmt.Errorf("uploading event attachment: %w", err)
+		return nil, mailboxError("uploading event attachment", target, calendarGrantHint, err)
 	}
 	if created == nil {
 		return nil, fmt.Errorf("uploading event attachment: Graph returned no attachment")
@@ -70,7 +71,7 @@ func (c *Client) UploadCalendarAttachment(ctx context.Context, eventID, name, co
 }
 
 // DownloadCalendarAttachment downloads a file attachment from an event.
-func (c *Client) DownloadCalendarAttachment(ctx context.Context, eventID, attachmentID string) (*CalendarAttachment, []byte, error) {
+func (c *Client) DownloadCalendarAttachment(ctx context.Context, target, eventID, attachmentID string) (*CalendarAttachment, []byte, error) {
 	if err := validateID(eventID, "event ID"); err != nil {
 		return nil, nil, err
 	}
@@ -78,9 +79,9 @@ func (c *Client) DownloadCalendarAttachment(ctx context.Context, eventID, attach
 		return nil, nil, err
 	}
 
-	attachment, err := c.inner.Me().Events().ByEventId(eventID).Attachments().ByAttachmentId(attachmentID).Get(ctx, nil)
+	attachment, err := c.targetUser(target).Events().ByEventId(eventID).Attachments().ByAttachmentId(attachmentID).Get(ctx, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("downloading event attachment: %w", err)
+		return nil, nil, mailboxError("downloading event attachment", target, calendarGrantHint, err)
 	}
 	if attachment == nil {
 		return nil, nil, fmt.Errorf("downloading event attachment: Graph returned no attachment")
@@ -98,7 +99,7 @@ func (c *Client) DownloadCalendarAttachment(ctx context.Context, eventID, attach
 }
 
 // DeleteCalendarAttachment deletes an attachment from an event.
-func (c *Client) DeleteCalendarAttachment(ctx context.Context, eventID, attachmentID string) error {
+func (c *Client) DeleteCalendarAttachment(ctx context.Context, target, eventID, attachmentID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -108,8 +109,8 @@ func (c *Client) DeleteCalendarAttachment(ctx context.Context, eventID, attachme
 	if err := validateID(attachmentID, "attachment ID"); err != nil {
 		return err
 	}
-	if err := c.inner.Me().Events().ByEventId(eventID).Attachments().ByAttachmentId(attachmentID).Delete(ctx, nil); err != nil {
-		return fmt.Errorf("deleting event attachment: %w", err)
+	if err := c.targetUser(target).Events().ByEventId(eventID).Attachments().ByAttachmentId(attachmentID).Delete(ctx, nil); err != nil {
+		return mailboxError("deleting event attachment", target, calendarGrantHint, err)
 	}
 	return nil
 }

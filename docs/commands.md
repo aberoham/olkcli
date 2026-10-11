@@ -41,17 +41,20 @@ olk mail batch <ID> [--id ID ...]
 olk mail thread <CONVERSATION_ID>
 olk mail delta [--token TOKEN]
 olk mail send --to EMAIL --subject SUBJECT --body BODY [--html]
-olk mail reply <ID> --body BODY [--reply-all] [--html] [--draft] [--inline CID=PATH ...]
+olk mail reply <ID> --body BODY [--reply-all] [--html] [--draft] [--cc EMAIL ...] [--bcc EMAIL ...] [--inline CID=PATH ...]
 olk mail reply <ID> --body "Thanks" --draft
 olk mail reply <ID> --body '<p>Thanks</p>' --html --draft
 olk mail reply <ID> --body '<p>Thanks all</p>' --reply-all --html --draft
 olk mail reply <ID> --body '<p><img src="cid:steps"></p>' --html --draft --inline steps=steps.png
-olk mail forward <ID> --to EMAIL [--cc EMAIL] [--comment COMMENT] [--html] [--draft]
+olk mail forward <ID> --to EMAIL [--cc EMAIL] [--bcc EMAIL] [--comment COMMENT] [--html] [--draft]
 olk mail mark <ID> read|unread
 olk mail move <ID> ID_OR_PATH [--mailbox EMAIL]
 olk mail delete <ID> --force [--mailbox EMAIL]
 olk mail attachments <ID> [--save] [--out DIR] [--attachment-id ID]
-olk mail folders list|create|rename|delete  # list traverses visible child folders
+olk mail folders list                       # traverses visible child folders
+olk mail folders create --name NAME [--parent ID_OR_PATH] [--mailbox EMAIL]
+olk mail folders rename ID_OR_PATH --name NAME [--mailbox EMAIL]
+olk mail folders delete ID_OR_PATH --force [--mailbox EMAIL]
 olk mail drafts list|create|send|delete|attach|update
 olk mail drafts create --to EMAIL --subject SUBJECT --body '<img src="cid:logo">' --html --inline logo=logo.png
 olk mail flag <ID> flagged|complete|notFlagged
@@ -64,6 +67,45 @@ olk mail rules list|create|delete
 `mail list` defaults to the Inbox when `--folder` is omitted. The `olk inbox`
 and `olk ls` shortcuts use the same default; pass `--folder` to list another
 folder.
+
+`mail folders create`, `rename` and `delete` act in the `--mailbox` mailbox when
+one is given, which needs `Mail.ReadWrite.Shared` and Full Access there. Create
+makes a top-level folder unless `--parent` names the containing folder:
+
+```bash
+olk mail folders create --mailbox shared@example.com --name "11 Nov" --parent "Inbox/2026"
+olk mail folders rename "Inbox/2026/11 Nov" --name "11 November" --mailbox shared@example.com
+olk mail folders delete "Inbox/2026/11 November" --force --mailbox shared@example.com
+```
+
+`--parent` and the folder argument of rename and delete take a folder ID, a
+well-known name such as `inbox`, or a slash-separated display-name path, resolved
+in the target mailbox the way `mail move` resolves its destination. A single
+display name is not a path; use the folder's ID or its full path. A folder name
+cannot contain `/`, because such a folder could not be addressed by path
+afterwards. Rename and delete refuse the well-known names `inbox`, `archive`,
+`deleteditems` and `junkemail`; a folder addressed by its ID is not checked
+against them and is left to Graph. `--dry-run` prints the mailbox and the parent
+as typed without contacting Graph, so it does not confirm that the parent exists.
+
+`--mailbox EMAIL` applies to every mailbox-scoped command, not only the ones
+shown with it above: `mail mark`, `flag`, `categorize`, `importance`, `rules`,
+`categories` and `ooo`, the calendar and contact writes, event attachments, and
+all of `todo`. Each sends every request to that mailbox, and a dry run names it.
+`people search`, `calendar availability` and `calendar find-times` are the
+exceptions; they ask on behalf of the signed-in user. Earlier releases ignored
+the flag for most of these commands, so if `OLK_MAILBOX` is exported in your
+shell, commands such as `olk todo list` or `olk calendar create` that used to
+act on your own mailbox now act on that one. Unset it, or pass `--mailbox ""`,
+to work in your own mailbox. See
+[authentication](authentication.md) for the scope each family needs, and for the
+families Microsoft does not document for another mailbox.
+
+`--dry-run` previews every write in these families and sends no write request.
+Earlier releases ignored it for `mail mark`, `mail rules delete`, `mail ooo off`,
+`calendar update`, `calendar delete`, `calendar respond`, `contacts update` and
+`contacts delete`, and performed the write. `olk version --json` lists
+`mailbox.dry-run-all-writes-v1` when the installed build previews all of them.
 
 To edit an existing draft without sending it:
 
@@ -97,21 +139,34 @@ not-found error that reads like a missing send permission.
 `mail reply --draft` creates a true threaded Outlook reply or reply-all draft,
 including Outlook's quoted history, and returns its draft ID and subject. For
 HTML drafts, `olk` inserts the supplied HTML ahead of that generated history
-instead of replacing it. It does not send; without `--draft`, replies retain
 instead of replacing it. Graph writes the quoted `Sent:` line in UTC with a
 weekday and seconds; HTML drafts rewrite it in the display time zone (`--tz`,
 `OLK_TIMEZONE`, config, or the local zone) in Outlook on the web's
 `14 September 2026 08:45` layout. That costs one extra read of the original
 message's `sentDateTime`. A `Sent:` line in any other layout is left as Graph
-wrote it. Use `--json` for a structured draft response. It does not send;
-without `--draft`, replies retain their immediate-send behavior. Use `--json`
-for a structured draft response, which reports the `to`, `cc` and `bcc` lists
-Outlook returned for the draft. `mail drafts list --json` reports the same
-three lists; its table shows To and CC.
+wrote it. It does not send; without `--draft`, replies retain their
+immediate-send behavior. Use `--json` for a structured draft response, which
+reports the `to`, `cc` and `bcc` lists Outlook returned for the draft.
+`mail drafts list --json` reports the same three lists; its table shows To and
+CC.
+
+A plain (non-`--html`) reply or forward comment keeps its line breaks. Graph
+interprets comments as HTML even when the original message is plain text, so
+`olk` escapes the text and writes each line as a `<div>`, each blank line as
+`<div><br></div>`, and leading or repeated spaces as `&nbsp;`. This preserves
+literal angle brackets and indentation without an extra read of the original.
+
+`--cc` and `--bcc` on `mail reply` add recipients to those Outlook generates for
+the reply or reply-all; they do not replace them, and an address already
+present is not repeated. A reply that is sent at once with added recipients is
+created as a draft, extended, and then sent, so it also needs write access to
+the mailbox and is refused under `--no-write`. Immediate HTML replies accept
+complete HTML documents with or without added recipients; explicit `--draft`
+HTML bodies must still be fragments to insert ahead of the quoted history.
 
 `mail forward --draft` does the same for a forward: Outlook generates the
 forwarded original, an HTML comment is inserted ahead of it, and the draft is
-left unsent. `--cc` adds Cc recipients to a forward, sent or drafted.
+left unsent. `--cc` and `--bcc` add recipients to a forward, sent or drafted.
 
 `--inline CID=PATH` is repeatable on `mail reply --html --draft` and
 `mail drafts create --html`. Reference every supplied CID in the HTML as

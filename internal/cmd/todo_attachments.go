@@ -24,7 +24,11 @@ type TodoAttachListCmd struct {
 }
 
 func (c *TodoAttachListCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -34,7 +38,7 @@ func (c *TodoAttachListCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	attachments, err := client.ListTodoAttachments(ctx.Ctx, listID, c.TaskID)
+	attachments, err := client.ListTodoAttachments(ctx.Ctx, target, listID, c.TaskID)
 	if err != nil {
 		return err
 	}
@@ -71,7 +75,11 @@ type TodoAttachUploadCmd struct {
 }
 
 func (c *TodoAttachUploadCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -96,7 +104,7 @@ func (c *TodoAttachUploadCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would upload %s to task %s\n", outfmt.Sanitize(filename), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would upload %s to task %s%s\n", outfmt.Sanitize(filename), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -105,7 +113,7 @@ func (c *TodoAttachUploadCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	att, err := client.UploadTodoAttachment(ctx.Ctx, listID, c.TaskID, filename, contentType, content)
+	att, err := client.UploadTodoAttachment(ctx.Ctx, target, listID, c.TaskID, filename, contentType, content)
 	if err != nil {
 		return err
 	}
@@ -123,7 +131,11 @@ type TodoAttachDownloadCmd struct {
 }
 
 func (c *TodoAttachDownloadCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -133,7 +145,7 @@ func (c *TodoAttachDownloadCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	name, _, content, err := client.DownloadTodoAttachment(ctx.Ctx, listID, c.TaskID, c.AttachmentID)
+	name, _, content, err := client.DownloadTodoAttachment(ctx.Ctx, target, listID, c.TaskID, c.AttachmentID)
 	if err != nil {
 		return err
 	}
@@ -162,17 +174,21 @@ type TodoAttachDeleteCmd struct {
 }
 
 func (c *TodoAttachDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !ctx.Flags.Force {
 		return fmt.Errorf("delete attachment %s: use --force to confirm deletion", outfmt.Sanitize(c.AttachmentID))
 	}
 
-	listID, err := resolveListID(ctx, c.List)
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would delete attachment %s from task %s\n", outfmt.Sanitize(c.AttachmentID), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would delete attachment %s from task %s%s\n", outfmt.Sanitize(c.AttachmentID), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -181,7 +197,7 @@ func (c *TodoAttachDeleteCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	err = client.DeleteTodoAttachment(ctx.Ctx, listID, c.TaskID, c.AttachmentID)
+	err = client.DeleteTodoAttachment(ctx.Ctx, target, listID, c.TaskID, c.AttachmentID)
 	if err != nil {
 		return err
 	}

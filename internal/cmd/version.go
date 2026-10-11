@@ -28,11 +28,14 @@ var advertisedCapabilities = []string{
 	"contacts.provider-metadata-v1",
 	"cli.json-error-v1",
 	"mail.folders.well-known-v1",
+	"mail.folders.delegated-writes-v1",
 	"mail.get.parent-folder-v1",
 	"mail.ids.immutable-v1",
 	"mail.message-observations-v1",
 	"mail.move.structured-receipt-v1",
 	"mail.forward.draft-v1",
+	"mail.reply.plain-line-breaks-v1",
+	"mail.reply.added-recipients-v1",
 	"mail.provider-body-format-v1",
 	"mail.thread.complete-v1",
 	"mail.attachments.inline-identity-v1",
@@ -42,6 +45,8 @@ var advertisedCapabilities = []string{
 	"mail.get.eml-v1",
 	"mcp.delegated-mailbox-v1",
 	"cli.version-namespace-v1",
+	"mailbox.target-all-scoped-commands-v1",
+	"mailbox.dry-run-all-writes-v1",
 }
 
 func (c *VersionCmd) Run(ctx *RunContext) error {

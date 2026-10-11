@@ -496,6 +496,42 @@ func sharedMailboxItemError(action, target, hint string, err error) error {
 	return wrapGraph(err, format, action, target, message)
 }
 
+// mailboxError wraps a Graph failure from a method that takes a mailbox target.
+// For the signed-in user's own mailbox the text is the plain "<action>: <cause>"
+// these methods have always returned; for another mailbox it names the mailbox
+// and, on a refusal, says what access the operation needs.
+func mailboxError(action, target, hint string, err error) error {
+	if target == "" {
+		return fmt.Errorf("%s: %w", action, err)
+	}
+	return sharedMailboxItemError(action, target, hint, err)
+}
+
+// The grant hints below name a scope only where Microsoft documents one for the
+// operation. To Do, mailbox settings, inbox rules and categories are routed to
+// the target mailbox all the same, since a refusal from Graph is better than a
+// write to the wrong mailbox, but their hints say that access is undocumented.
+const (
+	organiseGrantHint = "Changing messages in another mailbox needs the Mail.ReadWrite.Shared scope " +
+		"(sign in again with --scope Mail.ReadWrite.Shared) and Full Access on that mailbox in " +
+		"Exchange. The message ID must be one listed from that mailbox"
+	calendarGrantHint = "Changing events in another mailbox's calendar needs the " +
+		"Calendars.ReadWrite.Shared scope (sign in again with --scope Calendars.ReadWrite.Shared), reading " +
+		"them needs Calendars.Read.Shared, and either needs " +
+		"delegate or shared access to that calendar in Exchange. The event ID must be one listed " +
+		"from that mailbox"
+	contactsGrantHint = "Changing contacts in another mailbox needs the Contacts.ReadWrite.Shared scope " +
+		"(sign in again with --scope Contacts.ReadWrite.Shared) and access to that mailbox's contacts " +
+		"folder in Exchange. The contact ID must be one listed from that mailbox"
+	todoGrantHint = "Microsoft does not document signed-in access to another mailbox's To Do lists. " +
+		"The Tasks.ReadWrite.Shared scope exists (sign in again with --scope Tasks.ReadWrite.Shared) " +
+		"but no Graph method is published under it, so the request may be refused whatever access " +
+		"you hold. List and task IDs must be ones listed from that mailbox"
+	mailboxSettingsGrantHint = "Microsoft documents no shared-mailbox scope for mailbox settings, inbox " +
+		"rules or categories, so a signed-in user may be refused another mailbox's whatever access " +
+		"they hold on it in Exchange"
+)
+
 func sharedMailboxDraftError(action, target string, err error) error {
 	message := graphErrorMessage(err)
 	format := "%s in %s: %s"
@@ -532,6 +568,17 @@ func delegatedMessageNotFound(err error, message string) bool {
 		strings.Contains(lower, "item not found") || status == 404
 }
 
+// ReplyOptions carries the content, reply mode and added recipients for a
+// reply that is sent at once. Cc and Bcc are added to the recipients Graph
+// generates for the reply.
+type ReplyOptions struct {
+	Body     string
+	ReplyAll bool
+	IsHTML   bool
+	Cc       []string
+	Bcc      []string
+}
+
 // ReplyMessage replies to a message in the target mailbox, or in the signed-in
 // user's own mailbox when target is empty.
 //
@@ -540,22 +587,36 @@ func delegatedMessageNotFound(err error, message string) bool {
 // was listed from. Without a target, an ID belonging to a shared mailbox fails to
 // resolve at all, which is why replying from one was previously impossible rather
 // than merely mis-attributed.
-func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment string, replyAll, isHTML bool) error {
+//
+// A reply with added recipients is created as a draft, extended, and sent,
+// because the recipients a reply-all generates are known only once Graph has
+// created it. That path also needs write access to the mailbox.
+func (c *Client) ReplyMessage(ctx context.Context, target, messageID string, opts *ReplyOptions) error {
 	if err := c.ensureMaySend(); err != nil {
 		return err
 	}
 	if err := validateID(messageID, "message ID"); err != nil {
 		return err
 	}
+	if opts == nil {
+		return fmt.Errorf("reply options are required")
+	}
+	if len(opts.Cc) > 0 || len(opts.Bcc) > 0 {
+		return c.replyThroughDraft(ctx, target, messageID, opts)
+	}
 	action := "reply"
-	if replyAll {
+	if opts.ReplyAll {
 		action = "reply all"
 	}
 
+	comment := opts.Body
 	var err error
-	if replyAll {
+	if !opts.IsHTML {
+		comment = plainTextHTML(opts.Body)
+	}
+	if opts.ReplyAll {
 		body := users.NewItemMessagesItemReplyAllPostRequestBody()
-		if isHTML {
+		if opts.IsHTML {
 			body.SetMessage(htmlMessageBody(comment))
 		} else {
 			body.SetComment(&comment)
@@ -563,7 +624,7 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment st
 		err = c.targetUser(target).Messages().ByMessageId(messageID).ReplyAll().Post(ctx, body, nil)
 	} else {
 		body := users.NewItemMessagesItemReplyPostRequestBody()
-		if isHTML {
+		if opts.IsHTML {
 			body.SetMessage(htmlMessageBody(comment))
 		} else {
 			body.SetComment(&comment)
@@ -575,6 +636,24 @@ func (c *Client) ReplyMessage(ctx context.Context, target, messageID, comment st
 			return sharedMailboxError(action, target, replyGrantHint, err)
 		}
 		return fmt.Errorf("%s: %w", action, err)
+	}
+	return nil
+}
+
+func (c *Client) replyThroughDraft(ctx context.Context, target, messageID string, opts *ReplyOptions) error {
+	draft, err := c.CreateReplyDraft(ctx, target, messageID, &CreateReplyDraftOptions{
+		replaceBody: opts.IsHTML,
+		Body:        opts.Body,
+		ReplyAll:    opts.ReplyAll,
+		IsHTML:      opts.IsHTML,
+		Cc:          opts.Cc,
+		Bcc:         opts.Bcc,
+	})
+	if err != nil {
+		return err
+	}
+	if err := c.SendDraft(ctx, target, draft.ID); err != nil {
+		return c.cleanupFailedDraft(ctx, target, draft.ID, replyDraftKind, err)
 	}
 	return nil
 }
@@ -660,7 +739,9 @@ func (c *Client) DeleteMessage(ctx context.Context, target, messageID string) er
 	return nil
 }
 
-func (c *Client) MarkMessage(ctx context.Context, messageID string, isRead bool) error {
+// MarkMessage sets the read state of a message in the target mailbox, or in the
+// signed-in user's own mailbox when target is empty.
+func (c *Client) MarkMessage(ctx context.Context, target, messageID string, isRead bool) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -670,9 +751,9 @@ func (c *Client) MarkMessage(ctx context.Context, messageID string, isRead bool)
 	msg := models.NewMessage()
 	msg.SetIsRead(&isRead)
 
-	_, err := c.inner.Me().Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
+	_, err := c.targetUser(target).Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
 	if err != nil {
-		return fmt.Errorf("updating message: %w", err)
+		return mailboxError("updating message", target, organiseGrantHint, err)
 	}
 	return nil
 }
@@ -699,71 +780,96 @@ func (c *Client) GetWellKnownMailFolder(ctx context.Context, target, name string
 	return &folder, nil
 }
 
-// CreateMailFolder creates a new mail folder.
-func (c *Client) CreateMailFolder(ctx context.Context, displayName string) (*MailFolder, error) {
+const folderGrantHint = "Creating, renaming or deleting folders in another mailbox needs the " +
+	"Mail.ReadWrite.Shared scope (sign in again with --scope Mail.ReadWrite.Shared) and Full Access " +
+	"on that mailbox in Exchange. A folder ID must be one listed from that mailbox"
+
+// refuseWellKnownMailFolder rejects a rename or delete addressed to one of the
+// protected well-known names, without making a request. The check is on the name
+// alone: a folder addressed by its opaque ID is not recognised here and is left
+// to Graph.
+func refuseWellKnownMailFolder(verb, folderID string) error {
+	if protectedWellKnownMailFolders[strings.ToLower(folderID)] {
+		return fmt.Errorf("refusing to %s the well-known folder %q", verb, folderID)
+	}
+	return nil
+}
+
+// CreateMailFolder creates a mail folder in the target mailbox, or in the
+// signed-in user's own mailbox when target is empty. An empty parentID creates
+// the folder at the mailbox root; otherwise it becomes a child of that folder,
+// which must belong to the same mailbox.
+func (c *Client) CreateMailFolder(ctx context.Context, target, parentID, displayName string) (*MailFolder, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
 	folder := models.NewMailFolder()
 	folder.SetDisplayName(&displayName)
 
-	created, err := c.inner.Me().MailFolders().Post(ctx, folder, nil)
+	const action = "creating mail folder"
+	var created models.MailFolderable
+	var err error
+	if parentID == "" {
+		created, err = c.targetUser(target).MailFolders().Post(ctx, folder, nil)
+	} else {
+		if err := validateID(parentID, "parent folder ID"); err != nil {
+			return nil, err
+		}
+		created, err = c.targetUser(target).MailFolders().ByMailFolderId(parentID).ChildFolders().Post(ctx, folder, nil)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("creating mail folder: %w", err)
+		return nil, mailboxError(action, target, folderGrantHint, err)
 	}
-
-	result := MailFolder{
-		DisplayName: derefStr(created.GetDisplayName()),
+	if created == nil {
+		return nil, fmt.Errorf("%s: %w", action, errNilMailFolderResponse)
 	}
-	if created.GetId() != nil {
-		result.ID = *created.GetId()
-	}
-	if created.GetTotalItemCount() != nil {
-		result.TotalCount = *created.GetTotalItemCount()
-	}
-	if created.GetUnreadItemCount() != nil {
-		result.UnreadCount = *created.GetUnreadItemCount()
-	}
+	result := convertMailFolder(created)
 	return &result, nil
 }
 
-// RenameMailFolder renames a mail folder.
-func (c *Client) RenameMailFolder(ctx context.Context, folderID, displayName string) (*MailFolder, error) {
+// RenameMailFolder renames a folder in the target mailbox, or in the signed-in
+// user's own mailbox when target is empty.
+func (c *Client) RenameMailFolder(ctx context.Context, target, folderID, displayName string) (*MailFolder, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
 	if err := validateID(folderID, "folder ID"); err != nil {
+		return nil, err
+	}
+	if err := refuseWellKnownMailFolder("rename", folderID); err != nil {
 		return nil, err
 	}
 
 	folder := models.NewMailFolder()
 	folder.SetDisplayName(&displayName)
 
-	updated, err := c.inner.Me().MailFolders().ByMailFolderId(folderID).Patch(ctx, folder, nil)
+	const action = "renaming mail folder"
+	updated, err := c.targetUser(target).MailFolders().ByMailFolderId(folderID).Patch(ctx, folder, nil)
 	if err != nil {
-		return nil, fmt.Errorf("renaming mail folder: %w", err)
+		return nil, mailboxError(action, target, folderGrantHint, err)
 	}
-
-	result := MailFolder{
-		DisplayName: derefStr(updated.GetDisplayName()),
+	if updated == nil {
+		return nil, fmt.Errorf("%s: %w", action, errNilMailFolderResponse)
 	}
-	if updated.GetId() != nil {
-		result.ID = *updated.GetId()
-	}
+	result := convertMailFolder(updated)
 	return &result, nil
 }
 
-// DeleteMailFolder deletes a mail folder.
-func (c *Client) DeleteMailFolder(ctx context.Context, folderID string) error {
+// DeleteMailFolder deletes a folder from the target mailbox, or from the
+// signed-in user's own mailbox when target is empty.
+func (c *Client) DeleteMailFolder(ctx context.Context, target, folderID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	if err := validateID(folderID, "folder ID"); err != nil {
 		return err
 	}
-	err := c.inner.Me().MailFolders().ByMailFolderId(folderID).Delete(ctx, nil)
+	if err := refuseWellKnownMailFolder("delete", folderID); err != nil {
+		return err
+	}
+	err := c.targetUser(target).MailFolders().ByMailFolderId(folderID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting mail folder: %w", err)
+		return mailboxError("deleting mail folder", target, folderGrantHint, err)
 	}
 	return nil
 }
@@ -774,8 +880,10 @@ func (c *Client) SearchMessages(ctx context.Context, target, query string, top i
 	// The $search parameter value must be wrapped in double quotes per
 	// Graph API requirements. KQL property restrictions (from:, subject:, etc.)
 	// and boolean operators (AND, OR, NOT) work inside the quoted string.
-	// Strip literal double quotes from user input to prevent breaking the wrapper.
-	search := `"` + strings.ReplaceAll(query, `"`, "") + `"`
+	// Escape backslashes and quotes to preserve the query inside the wrapper.
+	escaped := strings.ReplaceAll(query, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	search := `"` + escaped + `"`
 	return c.ListMessages(ctx, target, &ListMessagesOptions{
 		Top:    top,
 		Search: search,
@@ -903,8 +1011,9 @@ func (c *Client) GetAttachments(ctx context.Context, target, messageID string) (
 	return attachments, nil
 }
 
-// FlagMessage sets the follow-up flag status on a message
-func (c *Client) FlagMessage(ctx context.Context, messageID, flagStatus string) error {
+// FlagMessage sets the follow-up flag status on a message in the target mailbox,
+// or in the signed-in user's own mailbox when target is empty.
+func (c *Client) FlagMessage(ctx context.Context, target, messageID, flagStatus string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -929,15 +1038,16 @@ func (c *Client) FlagMessage(ctx context.Context, messageID, flagStatus string) 
 	msg := models.NewMessage()
 	msg.SetFlag(flag)
 
-	_, err := c.inner.Me().Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
+	_, err := c.targetUser(target).Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
 	if err != nil {
-		return fmt.Errorf("flagging message: %w", err)
+		return mailboxError("flagging message", target, organiseGrantHint, err)
 	}
 	return nil
 }
 
-// SetImportance sets the importance level on a message
-func (c *Client) SetImportance(ctx context.Context, messageID, importance string) error {
+// SetImportance sets the importance level on a message in the target mailbox,
+// or in the signed-in user's own mailbox when target is empty.
+func (c *Client) SetImportance(ctx context.Context, target, messageID, importance string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -960,15 +1070,16 @@ func (c *Client) SetImportance(ctx context.Context, messageID, importance string
 	msg := models.NewMessage()
 	msg.SetImportance(&imp)
 
-	_, err := c.inner.Me().Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
+	_, err := c.targetUser(target).Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
 	if err != nil {
-		return fmt.Errorf("setting importance: %w", err)
+		return mailboxError("setting importance", target, organiseGrantHint, err)
 	}
 	return nil
 }
 
-// CategorizeMessage sets the categories on a message
-func (c *Client) CategorizeMessage(ctx context.Context, messageID string, categories []string) error {
+// CategorizeMessage sets the categories on a message in the target mailbox, or
+// in the signed-in user's own mailbox when target is empty.
+func (c *Client) CategorizeMessage(ctx context.Context, target, messageID string, categories []string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -979,9 +1090,9 @@ func (c *Client) CategorizeMessage(ctx context.Context, messageID string, catego
 	msg := models.NewMessage()
 	msg.SetCategories(categories)
 
-	_, err := c.inner.Me().Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
+	_, err := c.targetUser(target).Messages().ByMessageId(messageID).Patch(ctx, msg, nil)
 	if err != nil {
-		return fmt.Errorf("categorizing message: %w", err)
+		return mailboxError("categorizing message", target, organiseGrantHint, err)
 	}
 	return nil
 }

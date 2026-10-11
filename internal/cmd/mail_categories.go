@@ -17,12 +17,16 @@ type MailCategoriesCmd struct {
 type MailCategoriesListCmd struct{}
 
 func (c *MailCategoriesListCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
 	}
 
-	categories, err := client.ListCategories(ctx.Ctx)
+	categories, err := client.ListCategories(ctx.Ctx, target)
 	if err != nil {
 		return err
 	}
@@ -52,6 +56,10 @@ type MailCategoriesCreateCmd struct {
 }
 
 func (c *MailCategoriesCreateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if c.Name == "" {
 		return fmt.Errorf("category name cannot be empty")
 	}
@@ -65,11 +73,11 @@ func (c *MailCategoriesCreateCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would create category %q\n", outfmt.Sanitize(c.Name))
+		fmt.Printf("Would create category %q%s\n", outfmt.Sanitize(c.Name), mailboxSuffix("in", target))
 		return nil
 	}
 
-	cat, err := client.CreateCategory(ctx.Ctx, c.Name, c.Color)
+	cat, err := client.CreateCategory(ctx.Ctx, target, c.Name, c.Color)
 	if err != nil {
 		return err
 	}
@@ -84,6 +92,10 @@ type MailCategoriesDeleteCmd struct {
 }
 
 func (c *MailCategoriesDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !ctx.Flags.Force {
 		return fmt.Errorf("delete category %s: use --force to confirm deletion", outfmt.Sanitize(outfmt.Truncate(c.ID, 30)))
 	}
@@ -94,11 +106,11 @@ func (c *MailCategoriesDeleteCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would delete category %s\n", outfmt.Sanitize(c.ID))
+		fmt.Printf("Would delete category %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
 		return nil
 	}
 
-	err = client.DeleteCategory(ctx.Ctx, c.ID)
+	err = client.DeleteCategory(ctx.Ctx, target, c.ID)
 	if err != nil {
 		return err
 	}

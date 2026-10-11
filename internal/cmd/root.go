@@ -30,7 +30,7 @@ type RootFlags struct {
 	JSON         bool         `help:"Output as JSON" env:"OLK_JSON"`
 	Plain        bool         `help:"Output as plain TSV" env:"OLK_PLAIN"`
 	Account      string       `help:"Account email to use" env:"OLK_ACCOUNT"`
-	Mailbox      string       `help:"Target a different user's mailbox via delegated access (reading requires Mail.Read.Shared at login; sending also requires Mail.Send.Shared, Send As or Send on Behalf Of, and Full Access on the mailbox)" env:"OLK_MAILBOX"`
+	Mailbox      string       `help:"Run mailbox-scoped commands (mail, folders, calendar, contacts, To Do, rules, categories, automatic replies) against a different user's mailbox via delegated access (needs the matching .Shared scope at login where Microsoft provides one, and access to the mailbox in Exchange; sending also requires Mail.Send.Shared, Send As or Send on Behalf Of, and Full Access)" env:"OLK_MAILBOX"`
 	Verbose      bool         `help:"Verbose output" short:"v" env:"OLK_VERBOSE"`
 	DryRun       bool         `help:"Dry run mode" env:"OLK_DRY_RUN"`
 	Force        bool         `help:"Force operation" env:"OLK_FORCE"`

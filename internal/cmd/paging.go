@@ -86,3 +86,12 @@ func describeMailbox(target string) string {
 	}
 	return target
 }
+
+// printDryRunMailbox adds the target mailbox to a multi-line dry-run preview.
+// It prints nothing for the signed-in user's own mailbox, so a preview without
+// --mailbox reads as it always has.
+func printDryRunMailbox(target string) {
+	if target != "" {
+		fmt.Printf("  Mailbox: %s\n", target)
+	}
+}

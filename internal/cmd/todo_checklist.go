@@ -22,7 +22,11 @@ type TodoChecklistListCmd struct {
 }
 
 func (c *TodoChecklistListCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -32,7 +36,7 @@ func (c *TodoChecklistListCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	items, err := client.ListChecklistItems(ctx.Ctx, listID, c.TaskID)
+	items, err := client.ListChecklistItems(ctx.Ctx, target, listID, c.TaskID)
 	if err != nil {
 		return err
 	}
@@ -67,13 +71,17 @@ type TodoChecklistCreateCmd struct {
 }
 
 func (c *TodoChecklistCreateCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would create checklist item %q in task %s\n", outfmt.Sanitize(c.Name), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would create checklist item %q in task %s%s\n", outfmt.Sanitize(c.Name), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -82,7 +90,7 @@ func (c *TodoChecklistCreateCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	item, err := client.CreateChecklistItem(ctx.Ctx, listID, c.TaskID, c.Name)
+	item, err := client.CreateChecklistItem(ctx.Ctx, target, listID, c.TaskID, c.Name)
 	if err != nil {
 		return err
 	}
@@ -99,13 +107,17 @@ type TodoChecklistToggleCmd struct {
 }
 
 func (c *TodoChecklistToggleCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would toggle checklist item %s in task %s\n", outfmt.Sanitize(c.ItemID), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would toggle checklist item %s in task %s%s\n", outfmt.Sanitize(c.ItemID), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -114,7 +126,7 @@ func (c *TodoChecklistToggleCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	item, err := client.ToggleChecklistItem(ctx.Ctx, listID, c.TaskID, c.ItemID)
+	item, err := client.ToggleChecklistItem(ctx.Ctx, target, listID, c.TaskID, c.ItemID)
 	if err != nil {
 		return err
 	}
@@ -132,7 +144,11 @@ type TodoChecklistUpdateCmd struct {
 }
 
 func (c *TodoChecklistUpdateCmd) Run(ctx *RunContext) error {
-	listID, err := resolveListID(ctx, c.List)
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
@@ -147,7 +163,7 @@ func (c *TodoChecklistUpdateCmd) Run(ctx *RunContext) error {
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would update checklist item %s in task %s\n", outfmt.Sanitize(c.ItemID), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would update checklist item %s in task %s%s\n", outfmt.Sanitize(c.ItemID), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -156,7 +172,7 @@ func (c *TodoChecklistUpdateCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	item, err := client.UpdateChecklistItem(ctx.Ctx, listID, c.TaskID, c.ItemID, name, nil)
+	item, err := client.UpdateChecklistItem(ctx.Ctx, target, listID, c.TaskID, c.ItemID, name, nil)
 	if err != nil {
 		return err
 	}
@@ -172,18 +188,22 @@ type TodoChecklistDeleteCmd struct {
 	List   string `help:"Task list ID" env:"OLK_TODO_LIST"`
 }
 
-func (c *TodoChecklistDeleteCmd) Run(ctx *RunContext) error {
+func (c *TodoChecklistDeleteCmd) Run(ctx *RunContext) error { //nolint:dupl // same steps as the linked-resource delete; each command needs its own Run
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	if !ctx.Flags.Force {
 		return fmt.Errorf("delete checklist item %s: use --force to confirm deletion", outfmt.Sanitize(outfmt.Truncate(c.ItemID, 30)))
 	}
 
-	listID, err := resolveListID(ctx, c.List)
+	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
 	}
 
 	if ctx.Flags.DryRun {
-		fmt.Printf("Would delete checklist item %s in task %s\n", outfmt.Sanitize(c.ItemID), outfmt.Sanitize(c.TaskID))
+		fmt.Printf("Would delete checklist item %s in task %s%s\n", outfmt.Sanitize(c.ItemID), outfmt.Sanitize(c.TaskID), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -192,7 +212,7 @@ func (c *TodoChecklistDeleteCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	err = client.DeleteChecklistItem(ctx.Ctx, listID, c.TaskID, c.ItemID)
+	err = client.DeleteChecklistItem(ctx.Ctx, target, listID, c.TaskID, c.ItemID)
 	if err != nil {
 		return err
 	}

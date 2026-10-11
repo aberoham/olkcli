@@ -54,10 +54,10 @@ func TestMailboxArg_OnlyOnMailboxAwareTools(t *testing.T) {
 			t.Errorf("tool %q: offers mailbox arg = %v, want %v", b.name, ok, mailboxAwareTools[b.name])
 		}
 	}
-	if !seen["mail_list"] {
-		t.Error("mail_list should offer a mailbox argument")
+	if !seen["mail_list"] || !seen["todo_list"] {
+		t.Error("mail_list and todo_list should offer a mailbox argument")
 	}
-	if seen["drive_ls"] || seen["todo_list"] || seen["whoami"] {
+	if seen["drive_ls"] || seen["people_search"] || seen["whoami"] {
 		t.Error("tools that ignore --mailbox must not offer the argument")
 	}
 
@@ -112,9 +112,9 @@ func TestRejectUnknownArgs_MailboxOnlyOnAwareTools(t *testing.T) {
 	if err := rejectUnknownArgs(aware, map[string]any{mailboxArg: "team@example.com"}); err != nil {
 		t.Fatalf("mail_list should accept a mailbox argument: %v", err)
 	}
-	unaware := bindingFor(t, "todo_list", env, "todo", "list")
+	unaware := bindingFor(t, "people_search", env, "people", "search")
 	if err := rejectUnknownArgs(unaware, map[string]any{mailboxArg: "team@example.com"}); err == nil {
-		t.Fatal("todo_list must refuse a mailbox argument")
+		t.Fatal("people_search must refuse a mailbox argument")
 	}
 }
 

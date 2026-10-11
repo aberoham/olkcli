@@ -36,7 +36,7 @@ func TestCreateEventIncludesBody(t *testing.T) {
 				return graphJSONResponse(req, `{"id":"event-id","subject":"Event"}`)
 			})
 
-			_, err := client.CreateEvent(context.Background(), &CreateEventOptions{
+			_, err := client.CreateEvent(context.Background(), "", &CreateEventOptions{
 				Subject: "Event", Start: time.Now(), End: time.Now().Add(time.Hour),
 				Body: &EventBodyInput{Content: tc.wantBody, HTML: tc.html},
 			})
@@ -80,7 +80,7 @@ func TestCreateAllDayEventPreservesNamedTimeZone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	event, err := client.CreateEvent(context.Background(), &CreateEventOptions{
+	event, err := client.CreateEvent(context.Background(), "", &CreateEventOptions{
 		Subject: "DST day", Start: start, End: end, IsAllDay: true, TimeZone: "America/Los_Angeles",
 	})
 	if err != nil {
@@ -114,7 +114,7 @@ func TestUpdateAllDayEventPreservesNamedTimeZone(t *testing.T) {
 	start, _ := time.Parse("2006-01-02", "2026-03-08")
 	end, _ := time.Parse("2006-01-02", "2026-03-09")
 	allDay := true
-	_, err := client.UpdateEvent(context.Background(), &UpdateEventOptions{
+	_, err := client.UpdateEvent(context.Background(), "", &UpdateEventOptions{
 		EventID: "event-id", Start: &start, End: &end, AllDay: &allDay, TimeZone: "America/Los_Angeles",
 	})
 	if err != nil {
@@ -151,7 +151,7 @@ func TestUpdateEventPreservesOnlineMeetingBody(t *testing.T) {
 		return graphJSONResponse(req, `{"id":"event-id","subject":"Event"}`)
 	})
 
-	_, err := client.UpdateEvent(context.Background(), &UpdateEventOptions{
+	_, err := client.UpdateEvent(context.Background(), "", &UpdateEventOptions{
 		EventID: "event-id", Body: &EventBodyInput{Content: "New notes"},
 	})
 	if err != nil {

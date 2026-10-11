@@ -221,6 +221,10 @@ type ContactsCreateCmd struct {
 }
 
 func (c *ContactsCreateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -228,7 +232,7 @@ func (c *ContactsCreateCmd) Run(ctx *RunContext) error {
 
 	if ctx.Flags.DryRun {
 		emailStr := strings.Join(c.Email, ", ")
-		fmt.Printf("Would create contact: %s %s <%s>\n", outfmt.Sanitize(c.FirstName), outfmt.Sanitize(c.LastName), outfmt.Sanitize(emailStr))
+		fmt.Printf("Would create contact: %s %s <%s>%s\n", outfmt.Sanitize(c.FirstName), outfmt.Sanitize(c.LastName), outfmt.Sanitize(emailStr), mailboxSuffix("in", target))
 		return nil
 	}
 
@@ -260,7 +264,7 @@ func (c *ContactsCreateCmd) Run(ctx *RunContext) error {
 		}
 	}
 
-	contact, err := client.CreateContact(ctx.Ctx, in)
+	contact, err := client.CreateContact(ctx.Ctx, target, in)
 	if err != nil {
 		return err
 	}
@@ -321,6 +325,10 @@ func contactUpdateString(v string) *string {
 }
 
 func (c *ContactsUpdateCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -369,11 +377,15 @@ func (c *ContactsUpdateCmd) Run(ctx *RunContext) error {
 			in.Categories = &c.Categories
 		}
 	}
+	// A dry run stops before the address read below as well as before the write.
+	if ctx.Flags.DryRun {
+		fmt.Printf("Would update contact %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
+		return nil
+	}
 	if c.Street != "" || c.City != "" || c.State != "" || c.PostalCode != "" || c.Country != "" {
 		// Read-modify-write: fetch existing address, merge provided fields,
 		// so unspecified fields are preserved. 'none' clears individual parts.
-		// Update is not a delegated operation — always reads from /me.
-		existing, err := client.GetContact(ctx.Ctx, "", c.ID)
+		existing, err := client.GetContact(ctx.Ctx, target, c.ID)
 		if err != nil {
 			return err
 		}
@@ -430,7 +442,7 @@ func (c *ContactsUpdateCmd) Run(ctx *RunContext) error {
 		in.Address = &base
 	}
 
-	contact, err := client.UpdateContact(ctx.Ctx, c.ID, in)
+	contact, err := client.UpdateContact(ctx.Ctx, target, c.ID, in)
 	if err != nil {
 		return err
 	}
@@ -444,6 +456,10 @@ type ContactsDeleteCmd struct {
 }
 
 func (c *ContactsDeleteCmd) Run(ctx *RunContext) error {
+	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
+	if err != nil {
+		return err
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -453,7 +469,12 @@ func (c *ContactsDeleteCmd) Run(ctx *RunContext) error {
 		return fmt.Errorf("delete contact %s: use --force to confirm deletion", outfmt.Sanitize(c.ID))
 	}
 
-	err = client.DeleteContact(ctx.Ctx, c.ID)
+	if ctx.Flags.DryRun {
+		fmt.Printf("Would delete contact %s%s\n", outfmt.Sanitize(c.ID), mailboxSuffix("in", target))
+		return nil
+	}
+
+	err = client.DeleteContact(ctx.Ctx, target, c.ID)
 	if err != nil {
 		return err
 	}

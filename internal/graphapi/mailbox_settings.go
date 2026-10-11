@@ -19,14 +19,14 @@ type AutoReplySettings struct {
 }
 
 // GetAutoReply retrieves the current auto-reply (out-of-office) settings
-func (c *Client) GetAutoReply(ctx context.Context) (*AutoReplySettings, error) {
-	resp, err := c.inner.Me().MailboxSettings().Get(ctx, &users.ItemMailboxSettingsRequestBuilderGetRequestConfiguration{
+func (c *Client) GetAutoReply(ctx context.Context, target string) (*AutoReplySettings, error) {
+	resp, err := c.targetUser(target).MailboxSettings().Get(ctx, &users.ItemMailboxSettingsRequestBuilderGetRequestConfiguration{
 		QueryParameters: &users.ItemMailboxSettingsRequestBuilderGetQueryParameters{
 			Select: []string{"automaticRepliesSetting"},
 		},
 	})
 	if err != nil {
-		return nil, enterpriseError("getting mailbox settings", err)
+		return nil, settingsError("getting mailbox settings", target, err)
 	}
 
 	ars := resp.GetAutomaticRepliesSetting()
@@ -59,7 +59,7 @@ func (c *Client) GetAutoReply(ctx context.Context) (*AutoReplySettings, error) {
 }
 
 // SetAutoReply updates the auto-reply (out-of-office) settings
-func (c *Client) SetAutoReply(ctx context.Context, status, internalMsg, externalMsg, startTime, endTime, audience string) error {
+func (c *Client) SetAutoReply(ctx context.Context, target, status, internalMsg, externalMsg, startTime, endTime, audience string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
@@ -124,9 +124,9 @@ func (c *Client) SetAutoReply(ctx context.Context, status, internalMsg, external
 	settings := models.NewMailboxSettings()
 	settings.SetAutomaticRepliesSetting(autoReply)
 
-	_, err := c.inner.Me().MailboxSettings().Patch(ctx, settings, nil)
+	_, err := c.targetUser(target).MailboxSettings().Patch(ctx, settings, nil)
 	if err != nil {
-		return enterpriseError("updating auto-reply settings", err)
+		return settingsError("updating auto-reply settings", target, err)
 	}
 	return nil
 }

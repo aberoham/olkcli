@@ -14,10 +14,29 @@ type Category struct {
 	Color       string `json:"color"`
 }
 
-func (c *Client) ListCategories(ctx context.Context) ([]Category, error) {
-	resp, err := c.inner.Me().Outlook().MasterCategories().Get(ctx, nil)
+func categoryError(action, target string, err error) error {
+	if target != "" {
+		return sharedMailboxItemError(action, target, mailboxSettingsGrantHint, err)
+	}
+	return wrapGraph(err, "%s: %s", action, graphErrorMessage(err))
+}
+
+// settingsError wraps a failure from the mailbox settings and inbox rule
+// endpoints. The own-mailbox form keeps the note about personal accounts; for
+// another mailbox the likelier cause is that Graph does not allow the access.
+func settingsError(action, target string, err error) error {
+	if target != "" {
+		return sharedMailboxItemError(action, target, mailboxSettingsGrantHint, err)
+	}
+	return enterpriseError(action, err)
+}
+
+// ListCategories returns the category list of the target mailbox, or of the
+// signed-in user's own mailbox when target is empty.
+func (c *Client) ListCategories(ctx context.Context, target string) ([]Category, error) {
+	resp, err := c.targetUser(target).Outlook().MasterCategories().Get(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing categories: %s", graphErrorMessage(err))
+		return nil, categoryError("listing categories", target, err)
 	}
 
 	categories := make([]Category, 0, len(resp.GetValue()))
@@ -27,7 +46,7 @@ func (c *Client) ListCategories(ctx context.Context) ([]Category, error) {
 	return categories, nil
 }
 
-func (c *Client) CreateCategory(ctx context.Context, name, color string) (*Category, error) {
+func (c *Client) CreateCategory(ctx context.Context, target, name, color string) (*Category, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -42,25 +61,25 @@ func (c *Client) CreateCategory(ctx context.Context, name, color string) (*Categ
 		cat.SetColor(col.(*models.CategoryColor))
 	}
 
-	created, err := c.inner.Me().Outlook().MasterCategories().Post(ctx, cat, nil)
+	created, err := c.targetUser(target).Outlook().MasterCategories().Post(ctx, cat, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating category: %s", graphErrorMessage(err))
+		return nil, categoryError("creating category", target, err)
 	}
 
 	result := convertCategory(created)
 	return &result, nil
 }
 
-func (c *Client) DeleteCategory(ctx context.Context, categoryID string) error {
+func (c *Client) DeleteCategory(ctx context.Context, target, categoryID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	if err := validateID(categoryID, "category ID"); err != nil {
 		return err
 	}
-	err := c.inner.Me().Outlook().MasterCategories().ByOutlookCategoryId(categoryID).Delete(ctx, nil)
+	err := c.targetUser(target).Outlook().MasterCategories().ByOutlookCategoryId(categoryID).Delete(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("deleting category: %s", graphErrorMessage(err))
+		return categoryError("deleting category", target, err)
 	}
 	return nil
 }

@@ -24,10 +24,10 @@ type MailRule struct {
 	Actions     string `json:"actions"`
 }
 
-func (c *Client) ListMailRules(ctx context.Context) ([]MailRule, error) {
-	resp, err := c.inner.Me().MailFolders().ByMailFolderId("inbox").MessageRules().Get(ctx, nil)
+func (c *Client) ListMailRules(ctx context.Context, target string) ([]MailRule, error) {
+	resp, err := c.targetUser(target).MailFolders().ByMailFolderId("inbox").MessageRules().Get(ctx, nil)
 	if err != nil {
-		return nil, enterpriseError("listing mail rules", err)
+		return nil, settingsError("listing mail rules", target, err)
 	}
 
 	rules := make([]MailRule, 0, len(resp.GetValue()))
@@ -37,7 +37,7 @@ func (c *Client) ListMailRules(ctx context.Context) ([]MailRule, error) {
 	return rules, nil
 }
 
-func (c *Client) CreateMailRule(ctx context.Context, name, from, subjectContains string, hasAttachment bool, moveFolder string, markRead, deleteMsg bool, forwardTo, importance string) (*MailRule, error) {
+func (c *Client) CreateMailRule(ctx context.Context, target, name, from, subjectContains string, hasAttachment bool, moveFolder string, markRead, deleteMsg bool, forwardTo, importance string) (*MailRule, error) {
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
@@ -118,25 +118,25 @@ func (c *Client) CreateMailRule(ctx context.Context, name, from, subjectContains
 	}
 	rule.SetActions(actions)
 
-	created, err := c.inner.Me().MailFolders().ByMailFolderId("inbox").MessageRules().Post(ctx, rule, nil)
+	created, err := c.targetUser(target).MailFolders().ByMailFolderId("inbox").MessageRules().Post(ctx, rule, nil)
 	if err != nil {
-		return nil, enterpriseError("creating mail rule", err)
+		return nil, settingsError("creating mail rule", target, err)
 	}
 
 	result := convertMailRule(created)
 	return &result, nil
 }
 
-func (c *Client) DeleteMailRule(ctx context.Context, ruleID string) error {
+func (c *Client) DeleteMailRule(ctx context.Context, target, ruleID string) error {
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
 	if err := validateID(ruleID, "rule ID"); err != nil {
 		return err
 	}
-	err := c.inner.Me().MailFolders().ByMailFolderId("inbox").MessageRules().ByMessageRuleId(ruleID).Delete(ctx, nil)
+	err := c.targetUser(target).MailFolders().ByMailFolderId("inbox").MessageRules().ByMessageRuleId(ruleID).Delete(ctx, nil)
 	if err != nil {
-		return enterpriseError("deleting mail rule", err)
+		return settingsError("deleting mail rule", target, err)
 	}
 	return nil
 }
