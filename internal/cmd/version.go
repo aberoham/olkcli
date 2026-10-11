@@ -3,6 +3,8 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/rlrghb/olkcli/internal/config"
 )
 
 type VersionCmd struct{}
@@ -11,6 +13,7 @@ type versionInfo struct {
 	Version      string   `json:"version"`
 	Commit       string   `json:"commit"`
 	Date         string   `json:"date"`
+	Namespace    string   `json:"namespace"`
 	Capabilities []string `json:"capabilities"`
 }
 
@@ -41,13 +44,17 @@ var advertisedCapabilities = []string{
 	"mail.attachments.item-download-v1",
 	"mail.get.eml-v1",
 	"mcp.delegated-mailbox-v1",
+	"cli.version-namespace-v1",
 	"mailbox.target-all-scoped-commands-v1",
 	"mailbox.dry-run-all-writes-v1",
 }
 
 func (c *VersionCmd) Run(ctx *RunContext) error {
 	if ctx.Flags.JSON {
-		info := versionInfo{Version: Version, Commit: Commit, Date: Date, Capabilities: advertisedCapabilities}
+		info := versionInfo{
+			Version: Version, Commit: Commit, Date: Date,
+			Namespace: config.Namespace, Capabilities: advertisedCapabilities,
+		}
 		data, err := json.Marshal(info)
 		if err != nil {
 			return err
@@ -56,5 +63,8 @@ func (c *VersionCmd) Run(ctx *RunContext) error {
 		return nil
 	}
 	fmt.Printf("olk %s (commit: %s, built: %s)\n", Version, Commit, Date)
+	if config.Namespace != config.DefaultNamespace {
+		fmt.Printf("namespace: %s\n", config.Namespace)
+	}
 	return nil
 }
