@@ -3,6 +3,8 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -153,13 +155,25 @@ func uploadChunks(ctx context.Context, httpClient *http.Client, uploadURL string
 // transportFailure describes a failed request without its error text. The
 // upload URL is pre-authenticated, and Go's errors quote it: *url.Error does,
 // and so does a malformed redirect's Location, which may carry a token too.
+// It names the kind of failure from the error's types alone.
 func transportFailure(err error) error {
-	var ne net.Error
+	var (
+		ne      net.Error
+		dnsErr  *net.DNSError
+		certErr *tls.CertificateVerificationError
+		unknown x509.UnknownAuthorityError
+		invalid x509.CertificateInvalidError
+		host    x509.HostnameError
+	)
 	switch {
 	case errors.Is(err, context.Canceled):
 		return context.Canceled
 	case errors.Is(err, context.DeadlineExceeded):
 		return context.DeadlineExceeded
+	case errors.As(err, &certErr), errors.As(err, &unknown), errors.As(err, &invalid), errors.As(err, &host):
+		return errors.New("TLS certificate verification failed")
+	case errors.As(err, &dnsErr):
+		return errors.New("DNS lookup failed")
 	case errors.As(err, &ne) && ne.Timeout():
 		return errors.New("timed out")
 	}
