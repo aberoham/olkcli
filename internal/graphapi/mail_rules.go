@@ -41,6 +41,12 @@ func (c *Client) CreateMailRule(ctx context.Context, target, name, from, subject
 	if err := c.ensureWritable(); err != nil {
 		return nil, err
 	}
+	// A forwarding rule sends every matching message on.
+	if forwardTo != "" {
+		if err := c.ensureMaySend(); err != nil {
+			return nil, err
+		}
+	}
 	rule := models.NewMessageRule()
 	rule.SetDisplayName(&name)
 	enabled := true

@@ -63,6 +63,12 @@ func (c *Client) SetAutoReply(ctx context.Context, target, status, internalMsg, 
 	if err := c.ensureWritable(); err != nil {
 		return err
 	}
+	// Enabled automatic replies answer senders; turning them off sends nothing.
+	if status != "disabled" {
+		if err := c.ensureMaySend(); err != nil {
+			return err
+		}
+	}
 	autoReply := models.NewAutomaticRepliesSetting()
 
 	// Set status
