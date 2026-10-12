@@ -161,6 +161,12 @@ type callEnv struct {
 // savesEnabled reports whether tool calls may write local files.
 func (e *callEnv) savesEnabled() bool { return e.saves != nil && e.saves.enabled() }
 
+// notifyingDeletes are destructive tools that can also notify people: deleting
+// a meeting you organize cancels it for every attendee. --no-send hides them.
+var notifyingDeletes = map[string]bool{
+	"calendar_delete": true,
+}
+
 // saveOnlyTools exist only to write local files, so they are withheld when
 // saving is off. Tools that also list or print, such as mail_attachments and
 // mail_get, stay and refuse the save itself.
@@ -209,6 +215,9 @@ func (cfg *mcpConfig) exposes(ct curatedTool) bool {
 	case tierSend:
 		return !cfg.noWrite && !cfg.noSend && cfg.allowSend[ct.name]
 	case tierDestructive:
+		if cfg.noSend && notifyingDeletes[ct.name] {
+			return false
+		}
 		return !cfg.noWrite && cfg.allowDestructive[ct.name]
 	default:
 		return false
