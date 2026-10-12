@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -85,24 +87,35 @@ func (c *DriveUploadCmd) Run(ctx *RunContext) error {
 	defer f.Close()
 
 	totalSize := info.Size()
+	// re-validates redirects + denies internal IPs at dial time
+	if err := uploadChunks(ctx.Ctx, hardenedDownloadClient(), uploadURL, f, totalSize); err != nil {
+		return err
+	}
+
+	fmt.Printf("Uploaded %s (%s)\n",
+		outfmt.Sanitize(filepath.Base(c.LocalPath)), formatBytes(totalSize))
+	return nil
+}
+
+// uploadChunks sends totalSize bytes of f to a resumable upload session, and
+// succeeds only once the server confirms the final range.
+func uploadChunks(ctx context.Context, httpClient *http.Client, uploadURL string, f io.Reader, totalSize int64) error {
 	buf := make([]byte, uploadChunkSize)
 	var offset int64
 
-	httpClient := hardenedDownloadClient() // re-validates redirects + denies internal IPs at dial time
-
+	finished := false
 	for offset < totalSize {
-		n, err := f.Read(buf)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("reading file chunk: %w", err)
-		}
-		if n == 0 {
-			break
+		n, err := io.ReadFull(f, buf[:min(int64(len(buf)), totalSize-offset)])
+		if err != nil {
+			// A file that shrank since it was measured cannot complete the
+			// upload session it declared.
+			return fmt.Errorf("reading file chunk at byte %d of %d: %w", offset, totalSize, err)
 		}
 
 		end := offset + int64(n) - 1
 		contentRange := fmt.Sprintf("bytes %d-%d/%d", offset, end, totalSize)
 
-		req, err := http.NewRequestWithContext(ctx.Ctx, http.MethodPut, uploadURL, bytes.NewReader(buf[:n]))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, bytes.NewReader(buf[:n]))
 		if err != nil {
 			return fmt.Errorf("creating upload request failed")
 		}
@@ -111,6 +124,11 @@ func (c *DriveUploadCmd) Run(ctx *RunContext) error {
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
+			// The upload URL is pre-authenticated, and *url.Error quotes it.
+			var ue *url.Error
+			if errors.As(err, &ue) {
+				err = ue.Err
+			}
 			return fmt.Errorf("uploading chunk: %w", err)
 		}
 
@@ -119,6 +137,8 @@ func (c *DriveUploadCmd) Run(ctx *RunContext) error {
 			resp.Body.Close()
 			return fmt.Errorf("upload chunk failed: HTTP %d: %s", resp.StatusCode, string(body))
 		}
+		// Graph answers 202 until the last range, then 200 or 201 with the item.
+		finished = resp.StatusCode != http.StatusAccepted
 		// Drain and close body for connection reuse
 		io.Copy(io.Discard, resp.Body) //nolint:errcheck // drain body for connection reuse
 		resp.Body.Close()
@@ -128,8 +148,9 @@ func (c *DriveUploadCmd) Run(ctx *RunContext) error {
 		fmt.Fprintf(os.Stderr, "\rUploading... %d%%", pct)
 	}
 	fmt.Fprintln(os.Stderr)
+	if !finished {
+		return fmt.Errorf("upload incomplete: the server never confirmed the final range")
+	}
 
-	fmt.Printf("Uploaded %s (%s)\n",
-		outfmt.Sanitize(filepath.Base(c.LocalPath)), formatBytes(totalSize))
 	return nil
 }
