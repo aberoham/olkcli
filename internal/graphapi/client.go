@@ -142,34 +142,36 @@ func (m *loggingMiddleware) Intercept(pipeline khttp.Pipeline, middlewareIndex i
 		fmt.Fprintf(w, "[verbose]     %s: %s\n", k, redactHeader(k, vs))
 	}
 
-	// Only a non-2xx body is dumped, so only one is read here: a bounded
-	// prefix, put back in front of the rest of the stream. A successful body,
-	// such as a file download, passes through untouched, keeping both its
-	// streaming and any error that ends it early.
+	// Only a non-2xx body is dumped, so only one is read here. It is read in
+	// full, up to maxErrorBody, and its connection closed: the retry handler
+	// outside this one drops a 429 or 5xx without closing it. A read error is
+	// kept for the caller. A successful body, such as a file download, passes
+	// through untouched, keeping both its streaming and any error that ends it.
 	if resp.Body != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
-		prefix, readErr := io.ReadAll(io.LimitReader(resp.Body, verboseBodyLimit))
-		rest := io.Reader(resp.Body)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		resp.Body.Close()
+		shown, suffix := body, ""
+		if len(shown) > verboseBodyLimit {
+			shown, suffix = shown[:verboseBodyLimit], " …(truncated)"
+		}
 		if readErr != nil {
 			fmt.Fprintf(w, "[verbose]     body: (read failed: %v)\n", readErr)
-			rest = errReader{readErr}
 		} else {
-			suffix := ""
-			if len(prefix) == verboseBodyLimit {
-				suffix = " …(truncated)"
-			}
-			fmt.Fprintf(w, "[verbose]     body: %s%s\n", string(prefix), suffix)
+			fmt.Fprintf(w, "[verbose]     body: %s%s\n", string(shown), suffix)
 		}
-		resp.Body = readCloser{io.MultiReader(bytes.NewReader(prefix), rest), resp.Body}
+		var rest io.Reader = bytes.NewReader(nil)
+		if readErr != nil {
+			rest = errReader{readErr}
+		}
+		resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), rest))
 	}
 
 	return resp, nil
 }
 
-// readCloser pairs a reader with the closer of the body it replaces.
-type readCloser struct {
-	io.Reader
-	io.Closer
-}
+// maxErrorBody bounds how much of an error response is kept. Graph's error
+// bodies are a few kilobytes.
+const maxErrorBody = 4 << 20
 
 // errReader returns err once its data, read before it, runs out.
 type errReader struct{ err error }

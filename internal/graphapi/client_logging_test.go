@@ -71,3 +71,23 @@ func TestVerboseDumpsOnlyErrorBodiesAndKeepsThemWhole(t *testing.T) {
 		t.Errorf("error body came back %d bytes, want %d", len(data), len(long))
 	}
 }
+
+type trackedBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *trackedBody) Close() error { b.closed = true; return nil }
+
+// The retry handler drops a 429 or 5xx response without closing it, so the
+// logger closes every error body it reads.
+func TestVerboseClosesErrorBodies(t *testing.T) {
+	body := &trackedBody{Reader: strings.NewReader(strings.Repeat("e", verboseBodyLimit*2))}
+	resp, _ := logged(t, http.StatusServiceUnavailable, body)
+	if !body.closed {
+		t.Error("the error body's connection was left open")
+	}
+	if data, _ := io.ReadAll(resp.Body); len(data) != verboseBodyLimit*2 {
+		t.Errorf("error body came back %d bytes", len(data))
+	}
+}
