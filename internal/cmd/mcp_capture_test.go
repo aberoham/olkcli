@@ -112,3 +112,13 @@ func TestFailedResultIsCappedAndKeepsTheError(t *testing.T) {
 		t.Errorf("failed result is %d bytes, want it capped", len(text))
 	}
 }
+
+// Truncation is marked before trimming: output cut just after a newline must
+// still say it was cut.
+func TestTruncationSurvivesTrimming(t *testing.T) {
+	captured := strings.Repeat("x", 1000) + "\n" // limit+1 bytes, as capture keeps
+	text := resultText(failedResult(capText(captured, 1000), "", errors.New("failed"), 1000))
+	if !strings.Contains(text, "output truncated") {
+		t.Errorf("truncation notice lost: %q", text[len(text)-120:])
+	}
+}

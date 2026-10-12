@@ -109,3 +109,26 @@ func runCalendarReminderCommand(t *testing.T, command string, args []string, res
 	})
 	return output, calls, err
 }
+
+// --timed=false asks for no conversion: an update that only renames an event
+// must leave its all-day setting alone, and may be combined with --all-day.
+func TestCalendarUpdateTimedFalseConvertsNothing(t *testing.T) {
+	for _, args := range [][]string{{"--timed=false"}, {"--timed=false", "--all-day=false"}} {
+		var payload map[string]any
+		_, calls, err := runMailCommand(t, []string{"calendar", "update"}, append([]string{"event-id", "--subject", "Renamed"}, args...),
+			func(req *http.Request) *http.Response {
+				if err := decodeGraphJSON(req.Body, &payload); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				return graphJSONResponse(req, `{"id":"event-id","subject":"Renamed"}`)
+			})
+		if err != nil || calls != 1 {
+			t.Fatalf("%v: err = %v, calls = %d", args, err, calls)
+		}
+		_, set := payload["isAllDay"]
+		wantSet := len(args) == 2 // --all-day=false converts to timed
+		if set != wantSet {
+			t.Errorf("%v: isAllDay present = %v, want %v (payload %v)", args, set, wantSet, payload)
+		}
+	}
+}
