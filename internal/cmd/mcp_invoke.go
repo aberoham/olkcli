@@ -503,7 +503,7 @@ func flagTokens(f *kong.Flag, v any) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("flag %q: %w", f.Name, err)
 		}
-		if !on && f.Target.Kind() != reflect.Ptr {
+		if !on && f.Target.Kind() != reflect.Pointer {
 			return nil, nil
 		}
 		return []string{name + strconv.FormatBool(on)}, nil
