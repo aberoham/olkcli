@@ -19,6 +19,17 @@ import (
 // whose client times out after 30 seconds.
 var lockWait = 60 * time.Second
 
+// lockDir is where account locks live: a per-user directory that does not
+// follow OLK_CONFIG_DIR, because the OS credential store they guard does not
+// either. Two processes with different config directories still share one
+// keychain entry per account. A variable so tests can isolate it.
+var lockDir = func() string {
+	if dir, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(dir, config.Namespace, "locks")
+	}
+	return filepath.Join(config.ConfigDir(), "locks")
+}
+
 // errLocked reports that the lock is held elsewhere; tryLockFile returns it.
 var errLocked = errors.New("account lock held")
 
@@ -28,7 +39,7 @@ var errLocked = errors.New("account lock held")
 // token at once, a reader never sees a half-written one, and a refresh that
 // began before a sign-out cannot store its token afterwards.
 func lockAccount(ctx context.Context, email string) (unlock func(), err error) {
-	dir := filepath.Join(config.ConfigDir(), "locks")
+	dir := lockDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating lock directory: %w", err)
 	}
