@@ -357,6 +357,9 @@ func (c *Client) UpdateEvent(ctx context.Context, target string, opts *UpdateEve
 	if err := validateID(opts.EventID, "event ID"); err != nil {
 		return nil, err
 	}
+	if err := c.ensureEventChangeMaySend(ctx, target, opts.EventID); err != nil {
+		return nil, err
+	}
 	if opts.TimeZone != "" && (opts.AllDay == nil || !*opts.AllDay) {
 		return nil, fmt.Errorf("event time zone is only supported when converting to an all-day event")
 	}
@@ -524,9 +527,38 @@ func (c *Client) DeleteEvent(ctx context.Context, target, eventID string) error 
 	if err := validateID(eventID, "event ID"); err != nil {
 		return err
 	}
+	if err := c.ensureEventChangeMaySend(ctx, target, eventID); err != nil {
+		return err
+	}
 	err := c.targetUser(target).Events().ByEventId(eventID).Delete(ctx, nil)
 	if err != nil {
 		return mailboxError("deleting event", target, calendarGrantHint, err)
+	}
+	return nil
+}
+
+// ensureEventChangeMaySend refuses, under --no-send, changing or deleting a
+// meeting the mailbox organizes that has attendees: Graph mails each of them an
+// update or a cancellation. Events without attendees, and copies of meetings
+// someone else organizes, notify no one. A failed lookup refuses too.
+func (c *Client) ensureEventChangeMaySend(ctx context.Context, target, eventID string) error {
+	if !c.noSend {
+		return nil
+	}
+	event, err := c.targetUser(target).Events().ByEventId(eventID).Get(ctx, &users.ItemEventsEventItemRequestBuilderGetRequestConfiguration{
+		QueryParameters: &users.ItemEventsEventItemRequestBuilderGetQueryParameters{
+			Select: []string{"isOrganizer", "attendees"},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("%w: could not check whether the event has attendees: %w", ErrNoSend, err)
+	}
+	if event == nil {
+		return fmt.Errorf("%w: could not check whether the event has attendees", ErrNoSend)
+	}
+	organizer := event.GetIsOrganizer() == nil || *event.GetIsOrganizer()
+	if organizer && len(event.GetAttendees()) > 0 {
+		return fmt.Errorf("%w: the event has attendees, who would be notified", ErrNoSend)
 	}
 	return nil
 }

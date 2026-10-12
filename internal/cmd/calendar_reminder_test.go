@@ -85,6 +85,10 @@ func TestCalendarReminderCreateDryRunAndSendGuard(t *testing.T) {
 func runCalendarReminderCommand(t *testing.T, command string, args []string, responder func(*http.Request) *http.Response) (output string, calls int, err error) {
 	t.Helper()
 	client := testMailListClient(t, func(req *http.Request) *http.Response {
+		// --no-send looks the event up before an update; it has no attendees.
+		if req.Method == http.MethodGet {
+			return graphJSONResponse(req, `{"isOrganizer":true,"attendees":[]}`)
+		}
 		calls++
 		return responder(req)
 	})
