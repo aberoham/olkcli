@@ -39,6 +39,19 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 			return errorResult(err.Error()), nil
 		}
 
+		// The deadline covers waiting for a turn as well as running, so a call
+		// queued behind a stuck one gives up rather than waiting forever.
+		callCtx, cancel := context.WithTimeout(ctx, callTimeout(b.env.timeout))
+		defer cancel()
+
+		// Calls run one at a time, parser construction included: kong reads
+		// os.Stdout and os.Stderr, which a running call has swapped.
+		release, err := acquireCallSlot(callCtx)
+		if err != nil {
+			return errorResult(fmt.Sprintf("not run: %v while waiting for another tool call", err)), nil
+		}
+		defer release()
+
 		cli, kctx, err := prepareCall(argv, &b.env)
 		if err != nil {
 			var bad *argvError
@@ -47,16 +60,9 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 			}
 			return nil, err
 		}
-
-		timeout := cli.Timeout
-		if timeout <= 0 {
-			timeout = 60
+		if err := callCtx.Err(); err != nil {
+			return errorResult(fmt.Sprintf("not run: %v", err)), nil
 		}
-		if timeout > 600 {
-			timeout = 600
-		}
-		callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-		defer cancel()
 
 		// A call's local writes are always confined; a binding without a
 		// scope refuses them all.
@@ -206,6 +212,31 @@ func rejectUnknownArgs(b *toolBinding, args map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// callSlot admits one tool call at a time. Unlike a mutex, waiting for it
+// honours the call's cancellation and deadline.
+var callSlot = make(chan struct{}, 1)
+
+func acquireCallSlot(ctx context.Context) (release func(), err error) {
+	select {
+	case callSlot <- struct{}{}:
+		return func() { <-callSlot }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// callTimeout is a call's whole budget, from the server's --timeout: 60
+// seconds when unset, at most 600.
+func callTimeout(seconds int) time.Duration {
+	if seconds <= 0 {
+		seconds = 60
+	}
+	if seconds > 600 {
+		seconds = 600
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 // outFlagName is the flag through which a tool writes local files.
