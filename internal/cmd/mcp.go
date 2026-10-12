@@ -115,7 +115,7 @@ func (c *MCPCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
-	saves, err := newSaveScope(c.DownloadDir, flags.NoWrite)
+	saves, err := newSaveScope(c.DownloadDir, flags.NoWrite, flags.DryRun)
 	if err != nil {
 		return err
 	}

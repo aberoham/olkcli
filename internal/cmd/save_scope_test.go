@@ -1,28 +1,49 @@
 package cmd
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// newTestScope returns a scope rooted in a fresh directory, with symlinks in the
-// temp path (macOS /var -> /private/var) already resolved.
+// newTestScope returns a scope rooted in a fresh directory.
 func newTestScope(t *testing.T) *saveScope {
 	t.Helper()
-	s, err := newSaveScope(filepath.Join(t.TempDir(), "downloads"), false)
+	return mustScope(t, filepath.Join(t.TempDir(), "downloads"), false, false)
+}
+
+func mustScope(t *testing.T, dir string, noWrite, dryRun bool) *saveScope {
+	t.Helper()
+	s, err := newSaveScope(dir, noWrite, dryRun)
 	if err != nil {
 		t.Fatalf("newSaveScope: %v", err)
+	}
+	if s.root != nil {
+		t.Cleanup(func() { _ = s.root.Close() })
 	}
 	return s
 }
 
+// empty fails the test if dir holds anything.
+func assertEmpty(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("%s gained %v", dir, entries)
+	}
+}
+
 func TestSaveScope_OffUnlessADirectoryIsNamed(t *testing.T) {
 	for name, scope := range map[string]*saveScope{
-		"no dir":   mustScope(t, "", false),
-		"no-write": mustScope(t, t.TempDir(), true),
+		"no dir":   mustScope(t, "", false, false),
+		"no-write": mustScope(t, t.TempDir(), true, false),
 		"zero":     {},
 	} {
 		if scope.enabled() {
@@ -34,44 +55,54 @@ func TestSaveScope_OffUnlessADirectoryIsNamed(t *testing.T) {
 		if _, err := scope.file(filepath.Join(t.TempDir(), "x.eml")); !errors.Is(err, errSavesOff) {
 			t.Errorf("%s: file err = %v, want errSavesOff", name, err)
 		}
+		if _, err := scope.writeNew(t.TempDir(), "x", []byte("x")); !errors.Is(err, errSavesOff) {
+			t.Errorf("%s: writeNew err = %v, want errSavesOff", name, err)
+		}
 	}
 }
 
-func mustScope(t *testing.T, dir string, noWrite bool) *saveScope {
-	t.Helper()
-	s, err := newSaveScope(dir, noWrite)
-	if err != nil {
-		t.Fatalf("newSaveScope: %v", err)
+func TestSaveScope_DryRunCreatesNothing(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "downloads")
+	s := mustScope(t, dir, false, true)
+	if _, err := s.dir("sub"); err != nil {
+		t.Fatalf("dir: %v", err)
 	}
-	return s
+	if _, err := s.writeNew(s.path, "x", []byte("x")); err == nil {
+		t.Error("a dry run wrote a file")
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("a dry run created --download-dir: %v", err)
+	}
 }
 
-func TestSaveScope_AcceptsPathsUnderTheRoot(t *testing.T) {
+func TestSaveScope_WritesUnderTheRoot(t *testing.T) {
 	s := newTestScope(t)
-	for _, out := range []string{".", "", "sub/dir", s.root, filepath.Join(s.root, "a")} {
-		got, err := s.dir(out)
+	for _, out := range []string{".", "", "sub/dir", s.path, filepath.Join(s.path, "a")} {
+		dir, err := s.dir(out)
 		if err != nil {
 			t.Errorf("dir(%q): %v", out, err)
 			continue
 		}
-		if !within(s.root, got) {
-			t.Errorf("dir(%q) = %q, outside %q", out, got, s.root)
+		saved, err := s.writeNew(dir, "f.txt", []byte("x"))
+		if err != nil {
+			t.Errorf("writeNew in %q: %v", out, err)
+			continue
 		}
-		if info, err := os.Stat(got); err != nil || !info.IsDir() {
-			t.Errorf("dir(%q) did not create %q", out, got)
+		if data, err := os.ReadFile(saved); err != nil || string(data) != "x" {
+			t.Errorf("%s: %q, %v", saved, data, err)
 		}
 	}
 	got, err := s.file("exports/msg.eml")
 	if err != nil {
 		t.Fatalf("file: %v", err)
 	}
-	if want := filepath.Join(s.root, "exports", "msg.eml"); got != want {
+	if want := filepath.Join(s.path, "exports", "msg.eml"); got != want {
 		t.Errorf("file = %q, want %q", got, want)
 	}
 }
 
 // The paths an injected prompt would aim for: shell start-up files, launch
-// agents and SSH keys, by absolute path, home shorthand or traversal.
+// agents and SSH keys, by absolute path or traversal.
 func TestSaveScope_RefusesPathsOutsideTheRoot(t *testing.T) {
 	s := newTestScope(t)
 	home := t.TempDir()
@@ -80,10 +111,13 @@ func TestSaveScope_RefusesPathsOutsideTheRoot(t *testing.T) {
 		filepath.Join(home, ".ssh"),
 		"../outside",
 		"sub/../../outside",
-		filepath.Dir(s.root),
+		filepath.Dir(s.path),
 	} {
 		if _, err := s.dir(out); err == nil {
 			t.Errorf("dir(%q) accepted", out)
+		}
+		if _, err := s.writeNew(out, "authorized_keys", []byte("x")); err == nil {
+			t.Errorf("writeNew(%q) accepted", out)
 		}
 	}
 	for _, out := range []string{filepath.Join(home, ".zshenv"), "../.zshenv", "/etc/x"} {
@@ -91,15 +125,13 @@ func TestSaveScope_RefusesPathsOutsideTheRoot(t *testing.T) {
 			t.Errorf("file(%q) accepted", out)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, "Library")); !os.IsNotExist(err) {
-		t.Errorf("a refused directory was created: %v", err)
-	}
+	assertEmpty(t, home)
 }
 
 func TestSaveScope_RefusesSymlinksThatLeaveTheRoot(t *testing.T) {
 	s := newTestScope(t)
 	outside := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(s.root, "escape")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(s.path, "escape")); err != nil {
 		t.Fatal(err)
 	}
 	for _, out := range []string{"escape", "escape/deeper"} {
@@ -107,11 +139,51 @@ func TestSaveScope_RefusesSymlinksThatLeaveTheRoot(t *testing.T) {
 			t.Errorf("dir(%q) through a symlink out of the root was accepted", out)
 		}
 	}
-	if _, err := s.file("escape/x.eml"); err == nil {
-		t.Error("file through a symlink out of the root was accepted")
+	if _, err := s.writeNew(filepath.Join(s.path, "escape"), "x", []byte("x")); err == nil {
+		t.Error("writeNew through a symlink out of the root was accepted")
 	}
-	if _, err := os.Stat(filepath.Join(outside, "deeper")); !os.IsNotExist(err) {
-		t.Errorf("a directory was created through the symlink: %v", err)
+	assertEmpty(t, outside)
+}
+
+// A directory checked by dir and swapped for a symlink before the write, as a
+// local process racing a multi-attachment save could, still leads nowhere.
+func TestSaveScope_DirectorySwappedAfterTheCheck(t *testing.T) {
+	s := newTestScope(t)
+	dir, err := s.dir("inbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.writeNew(dir, "authorized_keys", []byte("x")); err == nil {
+		t.Error("a write followed a swapped-in symlink")
+	}
+	assertEmpty(t, outside)
+}
+
+// Replacing the root's own path redirects nothing: the scope holds the
+// directory open.
+func TestSaveScope_RootPathSwapped(t *testing.T) {
+	s := newTestScope(t)
+	moved := s.path + "-moved"
+	if err := os.Rename(s.path, moved); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, s.path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.writeNew(s.path, "x", []byte("x")); err != nil {
+		t.Fatalf("writeNew: %v", err)
+	}
+	assertEmpty(t, outside)
+	if _, err := os.Stat(filepath.Join(moved, "x")); err != nil {
+		t.Errorf("the write did not land in the held directory: %v", err)
 	}
 }
 
@@ -121,20 +193,26 @@ func TestSaveScope_RootMayItselfBeASymlink(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatal(err)
 	}
-	s := mustScope(t, link, false)
-	if _, err := s.dir("sub"); err != nil {
-		t.Errorf("dir under a symlinked root: %v", err)
+	s := mustScope(t, link, false, false)
+	dir, err := s.dir("sub")
+	if err != nil {
+		t.Fatalf("dir under a symlinked root: %v", err)
+	}
+	if _, err := s.writeNew(dir, "x", []byte("x")); err != nil {
+		t.Fatalf("writeNew under a symlinked root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(real, "sub", "x")); err != nil {
+		t.Error(err)
 	}
 }
 
-func TestRunContext_CLISavesAreUnconfined(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "anywhere")
-	r := &RunContext{}
-	if got, err := r.saveDir(out); err != nil || got != out {
-		t.Errorf("saveDir = %q, %v", got, err)
-	}
-	if got, err := r.saveFile(filepath.Join(out, "x.eml")); err != nil || got != filepath.Join(out, "x.eml") {
-		t.Errorf("saveFile = %q, %v", got, err)
+func TestSaveScope_CollisionsGetANewName(t *testing.T) {
+	s := newTestScope(t)
+	for _, want := range []string{"a.pdf", "a(1).pdf", "a(2).pdf"} {
+		saved, err := s.writeNew(s.path, "a.pdf", []byte("x"))
+		if err != nil || saved != filepath.Join(s.path, want) {
+			t.Errorf("writeNew = %q, %v; want %s", saved, err, want)
+		}
 	}
 }
 
@@ -149,8 +227,8 @@ func TestMCPOutPathsResolveUnderTheDownloadDir(t *testing.T) {
 		args map[string]any
 		want string // "" means the save must be refused
 	}{
-		{"default out", []string{"mail", "attachments"}, map[string]any{"id": "M", "save": true}, s.root},
-		{"relative out", []string{"mail", "attachments"}, map[string]any{"id": "M", "save": true, "out": "inbox"}, filepath.Join(s.root, "inbox")},
+		{"default out", []string{"mail", "attachments"}, map[string]any{"id": "M", "save": true}, s.path},
+		{"relative out", []string{"mail", "attachments"}, map[string]any{"id": "M", "save": true, "out": "inbox"}, filepath.Join(s.path, "inbox")},
 		{"absolute out", []string{"calendar", "attachments", "download"}, map[string]any{"event-id": "E", "attachment-id": "A", "out": t.TempDir()}, ""},
 		{"home out", []string{"calendar", "attachments", "download"}, map[string]any{"event-id": "E", "attachment-id": "A", "out": "~/Library/LaunchAgents"}, ""},
 		{"traversal out", []string{"mail", "attachments"}, map[string]any{"id": "M", "save": true, "out": "../../.ssh"}, ""},
@@ -181,15 +259,118 @@ func TestMCPOutPathsResolveUnderTheDownloadDir(t *testing.T) {
 	}
 }
 
-func TestMCPEMLExportIsConfined(t *testing.T) {
-	s := newTestScope(t)
-	r := &RunContext{saves: s}
-	if _, err := r.saveFile(filepath.Join(t.TempDir(), ".zshenv")); err == nil {
-		t.Error("an .eml export outside --download-dir was accepted")
+// attachmentGraph answers every request with one file attachment, readable as
+// a list or as the attachment itself.
+func attachmentGraph(calls *int) func(*http.Request) *http.Response {
+	return func(req *http.Request) *http.Response {
+		*calls++
+		if strings.HasSuffix(req.URL.Path, "/$value") {
+			return graphMIMEResponse(req)
+		}
+		return graphJSONResponse(req, `{"value":[{"@odata.type":"#microsoft.graph.fileAttachment","id":"att-1","name":"authorized_keys","size":4}],`+
+			`"@odata.type":"#microsoft.graph.fileAttachment","id":"att-1","name":"authorized_keys","contentBytes":"dGVzdA=="}`)
 	}
-	got, err := r.saveFile(filepath.Join(s.root, "m.eml"))
-	if err != nil || got != filepath.Join(s.root, "m.eml") {
-		t.Errorf("saveFile = %q, %v", got, err)
+}
+
+// runSaving runs a command as an MCP call would, with saves confined to s, and
+// returns how many Graph requests it made.
+func runSaving(t *testing.T, s *saveScope, argv ...string) (calls int, err error) {
+	t.Helper()
+	client := testMailListClient(t, attachmentGraph(&calls))
+	cli := &CLI{}
+	parser, err := newKongParser(cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kctx, err := parser.Parse(argv)
+	if err != nil {
+		t.Fatalf("parse %v: %v", argv, err)
+	}
+	_, _, err = captureStd(func() error {
+		return kctx.Run(&RunContext{Ctx: context.Background(), Flags: &cli.RootFlags, client: client, saves: s})
+	})
+	return calls, err
+}
+
+// Each command an MCP tool reaches must write through the scope: inside it
+// the file lands, outside it nothing is written anywhere.
+func TestSavingCommandsWriteOnlyThroughTheScope(t *testing.T) {
+	commands := map[string]func(out string) []string{
+		"mail attachments --save": func(out string) []string {
+			return []string{"mail", "attachments", "msg-1", "--save", "--out", out}
+		},
+		"mail attachments --attachment-id": func(out string) []string {
+			return []string{"mail", "attachments", "msg-1", "--attachment-id", "att-1", "--out", out}
+		},
+		"calendar attachments download": func(out string) []string {
+			return []string{"calendar", "attachments", "download", "event-1", "att-1", "--out", out}
+		},
+		"mail get --format eml": func(out string) []string {
+			return []string{"mail", "get", "msg-1", "--format", "eml", "--out", filepath.Join(out, "authorized_keys")}
+		},
+	}
+	for name, argv := range commands {
+		t.Run(name, func(t *testing.T) {
+			s := newTestScope(t)
+			if _, err := runSaving(t, s, argv(filepath.Join(s.path, "in"))...); err != nil {
+				t.Fatalf("inside the root: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(s.path, "in", "authorized_keys")); err != nil {
+				t.Errorf("file not written under the root: %v", err)
+			}
+
+			outside := t.TempDir()
+			if _, err := runSaving(t, s, argv(outside)...); err == nil {
+				t.Error("a save outside the root succeeded")
+			}
+			assertEmpty(t, outside)
+
+			if _, err := runSaving(t, mustScope(t, "", false, false), argv(filepath.Join(s.path, "off"))...); !errors.Is(err, errSavesOff) {
+				t.Errorf("saving with saves off = %v, want errSavesOff", err)
+			}
+		})
+	}
+}
+
+// --dry-run previews a download without fetching or writing it.
+func TestDownloadsHonourDryRun(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "new")
+	for _, argv := range [][]string{
+		{"calendar", "attachments", "download", "event-1", "att-1", "--out", out},
+		{"mail", "get", "msg-1", "--format", "eml", "--out", filepath.Join(out, "m.eml")},
+		{"todo", "attach", "download", "task-1", "att-1", "--list", "list-1", "--out", out},
+	} {
+		calls := 0
+		client := testMailListClient(t, attachmentGraph(&calls))
+		cli := &CLI{}
+		parser, err := newKongParser(cli)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kctx, err := parser.Parse(append(argv, "--dry-run"))
+		if err != nil {
+			t.Fatalf("parse %v: %v", argv, err)
+		}
+		stdout, _, err := captureStd(func() error {
+			return kctx.Run(&RunContext{Ctx: context.Background(), Flags: &cli.RootFlags, client: client})
+		})
+		if err != nil || calls != 0 || !strings.HasPrefix(stdout, "Would ") {
+			t.Errorf("%v: output %q, %d requests, %v", argv, stdout, calls, err)
+		}
+		if _, err := os.Stat(out); !os.IsNotExist(err) {
+			t.Errorf("%v: dry run created %s", argv, out)
+		}
+	}
+}
+
+func TestRunContext_CLISavesAreUnconfined(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "anywhere")
+	r := &RunContext{}
+	if got, err := r.saveDir(out); err != nil || got != out {
+		t.Errorf("saveDir = %q, %v", got, err)
+	}
+	if saved, err := r.writeNew(out, "x.eml", []byte("x")); err != nil || saved != filepath.Join(out, "x.eml") {
+		t.Errorf("writeNew = %q, %v", saved, err)
 	}
 }
 
@@ -199,8 +380,8 @@ func TestSaveOnlyToolsNeedADownloadDir(t *testing.T) {
 		want  bool
 	}{
 		"no scope":     {nil, false},
-		"off":          {mustScope(t, "", false), false},
-		"no-write":     {mustScope(t, t.TempDir(), true), false},
+		"off":          {mustScope(t, "", false, false), false},
+		"no-write":     {mustScope(t, t.TempDir(), true, false), false},
 		"download dir": {newTestScope(t), true},
 	} {
 		bindings := bindingsMap(t, &mcpConfig{env: callEnv{saves: tc.saves}})
@@ -212,4 +393,47 @@ func TestSaveOnlyToolsNeedADownloadDir(t *testing.T) {
 			t.Errorf("%s: mail_attachments withheld", name)
 		}
 	}
+}
+
+// A multi-attachment save checks its directory and then downloads. Swapping
+// the directory for a symlink during the download, as a racing local process
+// could, must not redirect the write.
+func TestAttachmentSaveSurvivesADirectorySwapMidDownload(t *testing.T) {
+	s := newTestScope(t)
+	in := filepath.Join(s.path, "in")
+	outside := t.TempDir()
+	calls := 0
+	serve := attachmentGraph(&calls)
+	swapped := false
+	client := testMailListClient(t, func(req *http.Request) *http.Response {
+		if !swapped && strings.Contains(req.URL.Path, "/attachments/") {
+			swapped = true
+			if err := os.Remove(in); err != nil {
+				t.Errorf("removing %s: %v", in, err)
+			}
+			if err := os.Symlink(outside, in); err != nil {
+				t.Errorf("swapping %s: %v", in, err)
+			}
+		}
+		return serve(req)
+	})
+	cli := &CLI{}
+	parser, err := newKongParser(cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kctx, err := parser.Parse([]string{"mail", "attachments", "msg-1", "--save", "--out", in})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = captureStd(func() error {
+		return kctx.Run(&RunContext{Ctx: context.Background(), Flags: &cli.RootFlags, client: client, saves: s})
+	})
+	if !swapped {
+		t.Fatal("the download never ran")
+	}
+	if err == nil {
+		t.Error("the save succeeded through the swapped-in symlink")
+	}
+	assertEmpty(t, outside)
 }
