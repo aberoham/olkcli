@@ -2,9 +2,11 @@ package graphapi
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -134,14 +136,8 @@ func (m *loggingMiddleware) Intercept(pipeline khttp.Pipeline, middlewareIndex i
 
 	resp, err := pipeline.Next(req, middlewareIndex)
 	if err != nil {
-		if graphHost(req.URL) {
-			// Go's transport errors quote the URL; quote the logged form.
-			msg := strings.ReplaceAll(err.Error(), req.URL.Redacted(), logURL(req.URL))
-			msg = strings.ReplaceAll(msg, req.URL.String(), logURL(req.URL))
-			fmt.Fprintf(w, "[verbose] <-- error: %s\n", msg)
-		} else {
-			fmt.Fprintf(w, "[verbose] <-- error (detail withheld: the URL may carry credentials)\n")
-		}
+		// Go's transport errors quote the URL, so only their kind is logged.
+		fmt.Fprintf(w, "[verbose] <-- error: %s\n", errorKind(err))
 		return resp, err
 	}
 
@@ -201,16 +197,15 @@ func logURL(u *url.URL) string {
 	}
 	shown := *u
 	shown.User = nil
+	shown.Fragment, shown.RawFragment = "", ""
 	// Redacted in place, keeping the rest of the query as sent: re-encoding it
 	// would print $top as %24top.
 	pairs := strings.Split(shown.RawQuery, "&")
 	for i, pair := range pairs {
 		name, _, _ := strings.Cut(pair, "=")
-		if decoded, err := url.QueryUnescape(name); err == nil {
-			name = decoded
-		}
-		if credentialParam(name) {
-			pairs[i] = url.QueryEscape(name) + "=<redacted>"
+		decoded, err := url.QueryUnescape(name)
+		if err != nil || credentialParam(decoded) {
+			pairs[i] = name + "=<redacted>"
 		}
 	}
 	shown.RawQuery = strings.Join(pairs, "&")
@@ -228,6 +223,24 @@ func credentialParam(name string) bool {
 		}
 	}
 	return false
+}
+
+// errorKind names a transport failure from its type alone.
+func errorKind(err error) string {
+	var ne net.Error
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline exceeded"
+	case errors.As(err, &ne) && ne.Timeout():
+		return "timed out"
+	}
+	cause := errors.Unwrap(err)
+	if cause == nil {
+		cause = err
+	}
+	return fmt.Sprintf("%T", cause) + " (detail withheld: it can quote the URL)"
 }
 
 func graphHost(u *url.URL) bool {

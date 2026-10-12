@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -138,6 +139,7 @@ func TestVerboseWithholdsCredentialCarriers(t *testing.T) {
 		{"https://graph.microsoft.com/v1.0/me/drive/items/1/content", http.StatusFound, nil, `<a href="https://x.sharepoint.com/?tempauth=SECRET-TOKEN">`},
 		{"https://graph.microsoft.com/v1.0/me", http.StatusBadRequest, http.Header{"Content-Location": {"https://x/?sig=SECRET-TOKEN"}, "Link": {"<https://x/?sig=SECRET-TOKEN>"}}, `{"error":{"code":"BadRequest"}}`},
 		{"https://user:SECRET-TOKEN@graph.microsoft.com/v1.0/me?access_token=SECRET-TOKEN&$skiptoken=page2", http.StatusBadRequest, nil, `{}`},
+		{"https://graph.microsoft.com/v1.0/me?%74oken%ZZ=SECRET-TOKEN#access_token=SECRET-TOKEN", http.StatusBadRequest, nil, `{}`},
 	}
 	for _, tc := range cases {
 		var log bytes.Buffer
@@ -171,5 +173,23 @@ func TestVerboseWithholdsCredentialCarriers(t *testing.T) {
 		if !strings.Contains(log.String(), want) {
 			t.Errorf("verbose log lost %s:\n%s", want, log.String())
 		}
+	}
+}
+
+// Transport errors are logged by kind; their text quotes the URL however it is
+// escaped.
+func TestVerboseTransportErrorsAreLoggedByKind(t *testing.T) {
+	var log bytes.Buffer
+	m := &loggingMiddleware{out: &log}
+	raw := `https://graph.microsoft.com/v1.0/me?access_token=SECRET-TOKEN&x="q"`
+	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me", nil)
+	_, err := m.Intercept(pipelineFunc(func(*http.Request) (*http.Response, error) {
+		return nil, &url.Error{Op: "Get", URL: raw, Err: errors.New("connection reset")}
+	}), 0, req)
+	if err == nil {
+		t.Fatal("error swallowed")
+	}
+	if strings.Contains(log.String(), "SECRET-TOKEN") {
+		t.Errorf("transport error leaked a credential:\n%s", log.String())
 	}
 }
