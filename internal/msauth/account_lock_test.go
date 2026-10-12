@@ -52,7 +52,17 @@ func (s *lockedStore) Keys() ([]string, error) {
 	return keys, nil
 }
 
+// isolateLocks points account locks at a fresh directory for one test.
+func isolateLocks(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	prev := lockDir
+	lockDir = func() string { return dir }
+	t.Cleanup(func() { lockDir = prev })
+}
+
 func TestAccountLockExcludesAndTimesOut(t *testing.T) {
+	isolateLocks(t)
 	t.Setenv("OLK_CONFIG_DIR", t.TempDir())
 	prev := lockWait
 	lockWait = 200 * time.Millisecond
@@ -82,6 +92,7 @@ func TestAccountLockExcludesAndTimesOut(t *testing.T) {
 // A refresh in flight when the account signs out must not store its token
 // after the sign-out deleted it.
 func TestLogoutDuringRefreshStaysLoggedOut(t *testing.T) {
+	isolateLocks(t)
 	t.Setenv("OLK_CONFIG_DIR", t.TempDir())
 	const email = "user@example.com"
 	refreshing := make(chan struct{})
@@ -130,5 +141,25 @@ func TestLogoutDuringRefreshStaysLoggedOut(t *testing.T) {
 	}
 	if _, err := a.GetCredential(context.Background(), email); err == nil {
 		t.Error("credentials still load after sign-out")
+	}
+}
+
+// Processes with different config directories share one keychain entry per
+// account, so they must share its lock too.
+func TestAccountLockIgnoresConfigDir(t *testing.T) {
+	isolateLocks(t)
+	prev := lockWait
+	lockWait = 100 * time.Millisecond
+	t.Cleanup(func() { lockWait = prev })
+
+	t.Setenv("OLK_CONFIG_DIR", t.TempDir())
+	unlock, err := lockAccount(context.Background(), "a@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	t.Setenv("OLK_CONFIG_DIR", t.TempDir())
+	if _, err := lockAccount(context.Background(), "a@example.com"); err == nil {
+		t.Error("a second config directory got its own lock on the same account")
 	}
 }
