@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -79,6 +80,9 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 		stdout, stderr, runErr := captureStdLimit(limit, func() error {
 			return kctx.Run(runCtx)
 		})
+		// Mark truncation on each stream as captured, before any trimming
+		// could bring it back under the cap and hide the cut.
+		stdout, stderr = capText(stdout, limit), capText(stderr, limit)
 
 		if runErr != nil {
 			return failedResult(stdout, stderr, runErr, limit), nil
@@ -487,8 +491,10 @@ func buildArgv(b *toolBinding, args map[string]any) ([]string, error) {
 }
 
 // Every value is joined to its flag as --name=value, so a value that begins
-// with "--" stays a value, and an explicit false reaches the command instead of
-// reading as absent: `"all-day": false` must clear the setting, not leave it.
+// with "--" stays a value. A plain boolean is a switch, so false leaves it
+// off, as omitting it would; a pointer boolean is a setting the command reads
+// only when given, so an explicit false is passed on: `"all-day": false` must
+// reach calendar update.
 func flagTokens(f *kong.Flag, v any) ([]string, error) {
 	name := "--" + f.Name + "="
 	switch {
@@ -496,6 +502,9 @@ func flagTokens(f *kong.Flag, v any) ([]string, error) {
 		on, err := asBool(v)
 		if err != nil {
 			return nil, fmt.Errorf("flag %q: %w", f.Name, err)
+		}
+		if !on && f.Target.Kind() != reflect.Ptr {
+			return nil, nil
 		}
 		return []string{name + strconv.FormatBool(on)}, nil
 	case f.IsSlice():

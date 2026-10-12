@@ -36,15 +36,21 @@ func TestBuildArgv_Scalars(t *testing.T) {
 	}
 }
 
-// An explicit false is passed on, so it can clear a setting.
-func TestBuildArgv_BoolFalsePassed(t *testing.T) {
-	b := testBinding(t, "mail", "list")
-	argv, err := buildArgv(b, map[string]any{"unread": false})
+// A plain boolean is a switch: false leaves it off, so flags in an either-or
+// group, like mail mark's read and unread, can still be sent together.
+func TestBuildArgv_PlainBoolFalseOmitted(t *testing.T) {
+	b := testBinding(t, "mail", "mark")
+	argv, err := buildArgv(b, map[string]any{"id": "M", "read": true, "unread": false})
 	if err != nil {
 		t.Fatalf("buildArgv: %v", err)
 	}
-	if !contains(argv, "--unread=false") {
-		t.Errorf("argv %v missing --unread=false", argv)
+	for _, tok := range argv {
+		if strings.HasPrefix(tok, "--unread") {
+			t.Errorf("argv %v passes %s", argv, tok)
+		}
+	}
+	if _, _, err := prepareCall(argv, &b.env); err != nil {
+		t.Errorf("read with unread false: %v", err)
 	}
 }
 
