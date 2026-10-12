@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -126,14 +127,19 @@ func (m *loggingMiddleware) Intercept(pipeline khttp.Pipeline, middlewareIndex i
 	}
 
 	// Log request
-	fmt.Fprintf(w, "[verbose] --> %s %s\n", req.Method, req.URL.String())
+	fmt.Fprintf(w, "[verbose] --> %s %s\n", req.Method, logURL(req.URL))
 	for k, vs := range req.Header {
 		fmt.Fprintf(w, "[verbose]     %s: %s\n", k, redactHeader(k, vs))
 	}
 
 	resp, err := pipeline.Next(req, middlewareIndex)
 	if err != nil {
-		fmt.Fprintf(w, "[verbose] <-- error: %v\n", err)
+		if graphHost(req.URL) {
+			fmt.Fprintf(w, "[verbose] <-- error: %v\n", err)
+		} else {
+			// Go's transport errors quote the URL, credentials and all.
+			fmt.Fprintf(w, "[verbose] <-- error (detail withheld: the URL may carry credentials)\n")
+		}
 		return resp, err
 	}
 
@@ -148,8 +154,12 @@ func (m *loggingMiddleware) Intercept(pipeline khttp.Pipeline, middlewareIndex i
 	// kept for the caller. A successful body, such as a file download, passes
 	// through untouched, keeping both its streaming and any error that ends it.
 	if resp.Body != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody+1))
 		resp.Body.Close()
+		if readErr == nil && len(body) > maxErrorBody {
+			body = body[:maxErrorBody]
+			readErr = fmt.Errorf("error response body exceeds %d bytes", maxErrorBody)
+		}
 		shown, suffix := body, ""
 		if len(shown) > verboseBodyLimit {
 			shown, suffix = shown[:verboseBodyLimit], " …(truncated)"
@@ -167,6 +177,21 @@ func (m *loggingMiddleware) Intercept(pipeline khttp.Pipeline, middlewareIndex i
 	}
 
 	return resp, nil
+}
+
+// logURL is a request URL fit for the verbose log. Graph's own URLs are shown
+// whole, query included. Any other host, such as the storage a download is
+// redirected to, gets a pre-authenticated URL whose query (and sometimes path)
+// is a credential, so only its scheme and host are shown.
+func logURL(u *url.URL) string {
+	if graphHost(u) {
+		return u.String()
+	}
+	return u.Scheme + "://" + u.Host + "/<redacted>"
+}
+
+func graphHost(u *url.URL) bool {
+	return strings.EqualFold(u.Hostname(), "graph.microsoft.com")
 }
 
 // maxErrorBody bounds how much of an error response is kept. Graph's error

@@ -91,3 +91,35 @@ func TestVerboseClosesErrorBodies(t *testing.T) {
 		t.Errorf("error body came back %d bytes", len(data))
 	}
 }
+
+// A request to a pre-authenticated download or upload URL is logged without
+// its path or query, which carry the credential; Graph's own are logged whole.
+func TestVerboseRedactsPreauthenticatedURLs(t *testing.T) {
+	var log bytes.Buffer
+	m := &loggingMiddleware{out: &log}
+	for _, raw := range []string{
+		"https://contoso-my.sharepoint.com/personal/x/_layouts/15/download.aspx?tempauth=SECRET-TOKEN",
+		"https://graph.microsoft.com/v1.0/me/messages?$top=5",
+	} {
+		req, _ := http.NewRequest(http.MethodGet, raw, nil)
+		_, _ = m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
+			return nil, errors.New(`Get "` + raw + `": connection reset`)
+		}), 0, req)
+	}
+	out := log.String()
+	if strings.Contains(out, "SECRET-TOKEN") || strings.Contains(out, "download.aspx") {
+		t.Errorf("verbose log leaks a pre-authenticated URL:\n%s", out)
+	}
+	if !strings.Contains(out, "$top=5") {
+		t.Errorf("Graph request URL not logged whole:\n%s", out)
+	}
+}
+
+// An error body past the cap ends in an error, not a clean EOF.
+func TestVerboseOversizedErrorBodyIsNotComplete(t *testing.T) {
+	resp, _ := logged(t, http.StatusBadRequest, io.NopCloser(strings.NewReader(strings.Repeat("e", maxErrorBody+10))))
+	data, err := io.ReadAll(resp.Body)
+	if err == nil || len(data) != maxErrorBody {
+		t.Errorf("read %d bytes, err %v; want %d bytes then an error", len(data), err, maxErrorBody)
+	}
+}
