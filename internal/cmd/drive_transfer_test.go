@@ -3,9 +3,13 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -78,6 +82,27 @@ func TestCopyDeclared(t *testing.T) {
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+// Failures are told apart by their types, never by text that could quote the
+// pre-authenticated URL.
+func TestTransportFailureNamesTheKind(t *testing.T) {
+	wrap := func(err error) error {
+		return &url.Error{Op: "Put", URL: uploadURL, Err: err}
+	}
+	for want, err := range map[string]error{
+		"TLS certificate verification failed": wrap(&tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}),
+		"DNS lookup failed":                   wrap(&net.DNSError{Err: "no such host", Name: "example.sharepoint.com"}),
+		"connection failed":                   wrap(errors.New("connection refused")),
+	} {
+		got := transportFailure(err)
+		if got.Error() != want {
+			t.Errorf("%v: got %q, want %q", err, got, want)
+		}
+		if strings.Contains(got.Error(), "SECRET-TOKEN") || strings.Contains(got.Error(), "sharepoint") {
+			t.Errorf("leaked: %v", got)
 		}
 	}
 }
