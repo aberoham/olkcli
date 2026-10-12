@@ -155,6 +155,17 @@ type callEnv struct {
 	timezone     string       // --tz: IANA zone for displayed times
 	selectFields SelectFields // --select: field projection
 	allowMailbox []string     // --allow-mailbox: mailboxes an agent may name per call
+	saves        *saveScope   // --download-dir: where a call may write files; nil refuses all
+}
+
+// savesEnabled reports whether tool calls may write local files.
+func (e *callEnv) savesEnabled() bool { return e.saves != nil && e.saves.enabled() }
+
+// saveOnlyTools exist only to write local files, so they are withheld when
+// saving is off. Tools that also list or print, such as mail_attachments and
+// mail_get, stay and refuse the save itself.
+var saveOnlyTools = map[string]bool{
+	"calendar_attachments_download": true,
 }
 
 // mailboxAllowed reports whether an agent may direct a call at target. An empty
@@ -185,6 +196,9 @@ func (cfg *mcpConfig) exposes(ct curatedTool) bool {
 	// A tool that cannot honour it would serve the operator's own instead, so
 	// it is withheld rather than offered under a promise it cannot keep.
 	if cfg.env.mailbox != "" && mailboxScopedButUnaware(ct.name) {
+		return false
+	}
+	if saveOnlyTools[ct.name] && !cfg.env.savesEnabled() {
 		return false
 	}
 	switch ct.tier {

@@ -27,6 +27,7 @@ type MCPCmd struct {
 	AllowDestructive []string `help:"Expose these curated DESTRUCTIVE tools by name (mail_delete, calendar_delete, …). Off by default; each hard-deletes and is vetoed by --no-write." name:"allow-destructive" env:"OLK_MCP_ALLOW_DESTRUCTIVE"`
 	AllowTool        []string `help:"Restrict exposed tools to these selectors: exact name (mail_list), prefix glob (mail_*, mail.*), or category (read, write, all). Repeatable/csv; default exposes all curated tools." name:"allow-tool" env:"OLK_MCP_ALLOW_TOOL"`
 	MaxOutputBytes   int      `help:"Cap a single tool call's output text in bytes (truncated past this; 0 uses the built-in default)." name:"max-output-bytes" env:"OLK_MCP_MAX_OUTPUT_BYTES"`
+	DownloadDir      string   `help:"Directory under which tools may save files (attachments, .eml exports); relative paths are taken under it. Default: saving is off." name:"download-dir" env:"OLK_MCP_DOWNLOAD_DIR" type:"path"`
 	AllowMailbox     []string `help:"Permit agents to direct calls at these delegated mailboxes by name. Repeatable/csv; default permits none, in which case tools act only on the mailbox given by --mailbox at launch." name:"allow-mailbox" env:"OLK_MCP_ALLOW_MAILBOX"`
 }
 
@@ -114,6 +115,12 @@ func (c *MCPCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
+	saves, err := newSaveScope(c.DownloadDir, flags.NoWrite)
+	if err != nil {
+		return err
+	}
+	env := launchEnv(flags, mailbox, allowMailbox)
+	env.saves = saves
 	srv, _, err := buildMCPServer(&mcpConfig{
 		allowWrite:       resolveAllowList(c.AllowWrite, writeToolNames(), "--allow-write"),
 		allowSend:        resolveAllowList(c.AllowSend, sendToolNames(), "--allow-send"),
@@ -123,7 +130,7 @@ func (c *MCPCmd) Run(ctx *RunContext) error {
 		allowed:          func(path []string) bool { return commandAllowed(flags, path) },
 		allowTool:        toolSelectorPredicate(c.AllowTool),
 		maxOutputBytes:   c.MaxOutputBytes,
-		env:              launchEnv(flags, mailbox, allowMailbox),
+		env:              env,
 	})
 	if err != nil {
 		return err

@@ -280,8 +280,10 @@ func TestToolSchema_ConciseInjectedForReadOnly(t *testing.T) {
 // TestCuratedReadToolCount pins the default (read-only) registry size so the
 // "N read tools" figure in README.md can't silently drift. If you add or remove
 // a read tool, update both this number and the README.
+// calendar_attachments_download is not counted: it only saves files, so it
+// needs --download-dir.
 func TestCuratedReadToolCount(t *testing.T) {
-	const documentedReadTools = 40
+	const documentedReadTools = 39
 	if got := len(buildBindings(t)); got != documentedReadTools {
 		t.Errorf("default read-only registry has %d tools; expected %d — update README.md and this constant in lockstep", got, documentedReadTools)
 	}

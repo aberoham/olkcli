@@ -137,10 +137,11 @@ func (c *CalendarAttachmentsDownloadCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
-	if err := validateOutDir(c.Out); err != nil {
+	outDir, err := ctx.saveDir(c.Out)
+	if err != nil {
 		return err
 	}
-	outPath := filepath.Join(c.Out, sanitizeFilename(attachment.Name))
+	outPath := filepath.Join(outDir, sanitizeFilename(attachment.Name))
 	saved, err := safeWriteFile(outPath, content)
 	if err != nil {
 		return fmt.Errorf("writing file: %w", err)
