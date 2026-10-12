@@ -145,7 +145,13 @@ func (a *Authenticator) finishLogin(ctx context.Context, tokenResp *TokenRespons
 		ExpiresAt:    expiresAt,
 		Email:        email,
 	}
-	if err := StoreToken(a.Store, email, tokenData); err != nil {
+	unlock, err := lockAccount(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	err = StoreToken(a.Store, email, tokenData)
+	unlock()
+	if err != nil {
 		return nil, fmt.Errorf("storing token: %w", err)
 	}
 
@@ -173,6 +179,14 @@ func (a *Authenticator) GetCredential(ctx context.Context, email string) (azcore
 	mu := emailMutex(email)
 	mu.Lock()
 	defer mu.Unlock()
+	// The same for other olk processes, and against a concurrent sign-out:
+	// the token is loaded under the lock, so a sign-out that came first is
+	// seen as a missing token rather than undone by the store below.
+	unlock, err := lockAccount(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	// Step 1: Load token from keyring.
 	tokenData, err := LoadToken(a.Store, email)
@@ -204,6 +218,14 @@ func (a *Authenticator) GetCredential(ctx context.Context, email string) (azcore
 
 // Logout removes the stored credentials and account file for the given email.
 func (a *Authenticator) Logout(email string) error {
+	// Waits for any refresh in progress, which would otherwise store its token
+	// after the delete.
+	unlock, err := lockAccount(context.Background(), email)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	// Delete token from keyring.
 	if err := a.Store.Delete(secrets.TokenKey(email)); err != nil {
 		return fmt.Errorf("deleting token for %s: %w", email, err)
