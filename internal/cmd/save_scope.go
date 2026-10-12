@@ -42,23 +42,23 @@ func newSaveScope(dir string, noWrite, dryRun bool) (*saveScope, error) {
 		return nil, fmt.Errorf("resolving --download-dir: %w", err)
 	}
 	if dryRun {
-		if real, err := filepath.EvalSymlinks(abs); err == nil {
-			abs = real
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = resolved
 		}
 		return &saveScope{path: filepath.Clean(abs)}, nil
 	}
 	if err := os.MkdirAll(abs, 0o700); err != nil {
 		return nil, fmt.Errorf("creating --download-dir: %w", err)
 	}
-	real, err := filepath.EvalSymlinks(abs)
+	resolved, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving --download-dir: %w", err)
 	}
-	root, err := os.OpenRoot(real)
+	root, err := os.OpenRoot(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("opening --download-dir: %w", err)
 	}
-	return &saveScope{path: real, root: root}, nil
+	return &saveScope{path: resolved, root: root}, nil
 }
 
 // enabled reports whether this scope permits any save.
