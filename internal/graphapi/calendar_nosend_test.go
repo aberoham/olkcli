@@ -11,17 +11,23 @@ import (
 // reach Graph when attendees would be notified. The fake records every request
 // past the lookup.
 func TestNoSendGuardsEventChangesThatNotifyAttendees(t *testing.T) {
-	const meeting = `{"isOrganizer":true,"attendees":[{"emailAddress":{"address":"a@example.com"}}]}`
+	const attendee = `[{"emailAddress":{"address":"a@example.com"}}]`
 	for _, tc := range []struct {
 		name    string
 		lookup  string // event JSON, or "" for a failed lookup
 		refused bool
 	}{
-		{"organized meeting with attendees", meeting, true},
-		{"organizer unknown", `{"attendees":[{"emailAddress":{"address":"a@example.com"}}]}`, true},
+		{"organized meeting with attendees", `{"isOrganizer":true,"type":"singleInstance","attendees":` + attendee + `}`, true},
+		{"organizer unknown", `{"type":"singleInstance","attendees":` + attendee + `}`, true},
 		{"failed lookup", "", true},
-		{"personal event", `{"isOrganizer":true,"attendees":[]}`, false},
-		{"someone else's meeting", `{"isOrganizer":false,"attendees":[{"emailAddress":{"address":"a@example.com"}}]}`, false},
+		{"empty lookup", `{}`, true},
+		{"attendees absent", `{"isOrganizer":true,"type":"singleInstance"}`, true},
+		{"attendees null", `{"isOrganizer":true,"type":"singleInstance","attendees":null}`, true},
+		{"type absent", `{"isOrganizer":true,"attendees":[]}`, true},
+		{"series without attendees", `{"isOrganizer":true,"type":"seriesMaster","attendees":[]}`, true},
+		{"personal event", `{"isOrganizer":true,"type":"singleInstance","attendees":[]}`, false},
+		{"personal occurrence", `{"isOrganizer":true,"type":"occurrence","attendees":[]}`, false},
+		{"someone else's meeting", `{"isOrganizer":false,"type":"singleInstance","attendees":` + attendee + `}`, false},
 	} {
 		for _, op := range []struct {
 			name   string
@@ -41,6 +47,9 @@ func TestNoSendGuardsEventChangesThatNotifyAttendees(t *testing.T) {
 				changed := 0
 				c := testGraphClient(t, func(req *http.Request) *http.Response {
 					if req.Method == http.MethodGet {
+						if got := req.URL.Query().Get("$select"); got != "isOrganizer,attendees,type" {
+							t.Errorf("lookup $select = %q", got)
+						}
 						if tc.lookup == "" {
 							return &http.Response{StatusCode: http.StatusInternalServerError, Header: http.Header{}, Body: http.NoBody, Request: req}
 						}

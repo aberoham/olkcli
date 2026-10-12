@@ -86,8 +86,13 @@ func runCalendarReminderCommand(t *testing.T, command string, args []string, res
 	t.Helper()
 	client := testMailListClient(t, func(req *http.Request) *http.Response {
 		// --no-send looks the event up before an update; it has no attendees.
+		// Any other read is unexpected.
 		if req.Method == http.MethodGet {
-			return graphJSONResponse(req, `{"isOrganizer":true,"attendees":[]}`)
+			if command != "update" || !strings.Contains(strings.Join(args, " "), "--no-send") ||
+				req.URL.Query().Get("$select") != "isOrganizer,attendees,type" {
+				t.Errorf("unexpected lookup %s for %s %v", req.URL, command, args)
+			}
+			return graphJSONResponse(req, `{"isOrganizer":true,"type":"singleInstance","attendees":[]}`)
 		}
 		calls++
 		return responder(req)
