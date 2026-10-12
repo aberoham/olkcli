@@ -56,7 +56,7 @@ func (c *DriveUploadCmd) Run(ctx *RunContext) error {
 
 	if info.Size() < maxSimpleUpload {
 		// Simple upload
-		content, err := os.ReadFile(c.LocalPath)
+		content, err := readLocalFile(c.LocalPath, maxSimpleUpload-1)
 		if err != nil {
 			return fmt.Errorf("reading file: %w", err)
 		}
