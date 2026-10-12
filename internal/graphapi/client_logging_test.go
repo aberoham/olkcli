@@ -123,3 +123,53 @@ func TestVerboseOversizedErrorBodyIsNotComplete(t *testing.T) {
 		t.Errorf("read %d bytes, err %v; want %d bytes then an error", len(data), err, maxErrorBody)
 	}
 }
+
+// Bodies and headers from outside Graph, and redirect bodies, can echo a
+// pre-authenticated URL, so verbose output withholds them; Graph URLs lose
+// user info and credential-like query values.
+func TestVerboseWithholdsCredentialCarriers(t *testing.T) {
+	cases := []struct {
+		url    string
+		status int
+		header http.Header
+		body   string
+	}{
+		{"https://contoso.sharepoint.com/x?tempauth=SECRET-TOKEN", http.StatusForbidden, nil, `{"error":"bad tempauth=SECRET-TOKEN"}`},
+		{"https://graph.microsoft.com/v1.0/me/drive/items/1/content", http.StatusFound, nil, `<a href="https://x.sharepoint.com/?tempauth=SECRET-TOKEN">`},
+		{"https://graph.microsoft.com/v1.0/me", http.StatusBadRequest, http.Header{"Content-Location": {"https://x/?sig=SECRET-TOKEN"}, "Link": {"<https://x/?sig=SECRET-TOKEN>"}}, `{"error":{"code":"BadRequest"}}`},
+		{"https://user:SECRET-TOKEN@graph.microsoft.com/v1.0/me?access_token=SECRET-TOKEN&$skiptoken=page2", http.StatusBadRequest, nil, `{}`},
+	}
+	for _, tc := range cases {
+		var log bytes.Buffer
+		m := &loggingMiddleware{out: &log}
+		req, _ := http.NewRequest(http.MethodGet, tc.url, nil)
+		req.Header.Set("Referer", "https://x/?sig=SECRET-TOKEN")
+		_, err := m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
+			h := tc.header
+			if h == nil {
+				h = http.Header{}
+			}
+			return &http.Response{StatusCode: tc.status, Status: http.StatusText(tc.status), Header: h,
+				Body: io.NopCloser(strings.NewReader(tc.body)), Request: r}, nil
+		}), 0, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(log.String(), "SECRET-TOKEN") {
+			t.Errorf("%s (HTTP %d) leaked a credential:\n%s", tc.url, tc.status, log.String())
+		}
+	}
+	// Graph's own error bodies and OData paging stay visible for diagnosis.
+	var log bytes.Buffer
+	m := &loggingMiddleware{out: &log}
+	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=page2", nil)
+	_, _ = m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 400, Status: "Bad Request", Header: http.Header{"Request-Id": {"rid-1"}},
+			Body: io.NopCloser(strings.NewReader(`{"error":{"code":"BadRequest"}}`)), Request: r}, nil
+	}), 0, req)
+	for _, want := range []string{"$skiptoken=page2", "rid-1", `"code":"BadRequest"`} {
+		if !strings.Contains(log.String(), want) {
+			t.Errorf("verbose log lost %s:\n%s", want, log.String())
+		}
+	}
+}
