@@ -89,3 +89,19 @@ func TestCLIBodyStillReadsPipedStdin(t *testing.T) {
 		t.Errorf("an explicit body under MCP = %q, %v", got, err)
 	}
 }
+
+// A stdin that cannot be inspected is an error, not an empty body to send.
+func TestBodyFromAnUnreadableStdinIsAnError(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+	_ = r.Close()
+	saved := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = saved })
+	if got, err := (&RunContext{}).bodyOrStdin(""); err == nil {
+		t.Errorf("bodyOrStdin = %q, nil; want an error", got)
+	}
+}

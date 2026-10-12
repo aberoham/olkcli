@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/term"
@@ -26,13 +25,17 @@ type MailGetCmd struct {
 // writeEML exports the message as raw MIME. The bytes are written unaltered,
 // because sanitizing them would corrupt the file; for the same reason they
 // cannot be wrapped as untrusted content, so an MCP caller must use --out.
-func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target string) error {
+func (c *MailGetCmd) writeEML(ctx *RunContext, target string) error {
 	if err := validateEMLStdout(c.Out, ctx.Flags.JSON, ctx.Flags.WrapUntrusted, term.IsTerminal(int(os.Stdout.Fd()))); err != nil {
 		return err
 	}
 	if c.Out != "" && ctx.Flags.DryRun {
 		fmt.Printf("Would export message %s to %s\n", outfmt.Sanitize(c.ID), outfmt.Sanitize(c.Out))
 		return nil
+	}
+	client, err := ctx.GraphClient()
+	if err != nil {
+		return err
 	}
 	content, err := client.GetMessageMIME(ctx.Ctx, target, c.ID)
 	if err != nil {
@@ -42,11 +45,7 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target s
 		_, err = os.Stdout.Write(content)
 		return err
 	}
-	path, err := ctx.saveFile(c.Out)
-	if err != nil {
-		return err
-	}
-	saved, err := ctx.writeNew(filepath.Dir(path), filepath.Base(path), content)
+	saved, err := ctx.writeNewFile(c.Out, content)
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", c.Out, err)
 	}
@@ -83,21 +82,22 @@ type emlExport struct {
 }
 
 func (c *MailGetCmd) Run(ctx *RunContext) error {
-	client, err := ctx.GraphClient()
-	if err != nil {
-		return err
-	}
-
 	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
 	if err != nil {
 		return err
 	}
 
+	// An export signs in itself, after any dry-run preview.
 	if c.Format == mailFormatEML {
-		return c.writeEML(ctx, client, target)
+		return c.writeEML(ctx, target)
 	}
 	if c.Out != "" {
 		return fmt.Errorf("--out applies only to --format eml")
+	}
+
+	client, err := ctx.GraphClient()
+	if err != nil {
+		return err
 	}
 
 	preference := graphapi.MessageBodyDefault

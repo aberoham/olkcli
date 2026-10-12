@@ -119,6 +119,9 @@ func (c *MCPCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
+	if saves.root != nil {
+		defer func() { _ = saves.root.Close() }()
+	}
 	env := launchEnv(flags, mailbox, allowMailbox)
 	env.saves = saves
 	srv, _, err := buildMCPServer(&mcpConfig{
