@@ -13,75 +13,88 @@ import (
 // are the agent's, and the agent reads untrusted mail, so they must stay under
 // the directory the operator named with `olk mcp --download-dir`.
 //
-// It lives on RunContext, not RootFlags, so no tool argument or OLK_* variable
-// can reach it.
+// Every directory it creates and every file it opens goes through an os.Root
+// held for the server's lifetime, so a directory swapped for a symlink between
+// one step and the next still cannot lead outside. It lives on RunContext, not
+// RootFlags, so no tool argument or OLK_* variable can reach it.
 type saveScope struct {
-	root    string // resolved --download-dir; empty refuses every save
-	refusal string // why saving is off, when root is empty
+	path    string   // resolved --download-dir; empty refuses every save
+	root    *os.Root // nil in a dry run, which creates nothing
+	refusal string   // why saving is off, when path is empty
 }
 
 // errSavesOff is returned for any save through MCP that the operator has not
 // enabled.
 var errSavesOff = errors.New("saving files is off for MCP tools")
 
-// newSaveScope resolves the operator's --download-dir, creating it if needed.
-// With --no-write, or without a directory, every save is refused.
-func newSaveScope(dir string, noWrite bool) (*saveScope, error) {
+// newSaveScope resolves the operator's --download-dir. With --no-write, or
+// without a directory, every save is refused. A dry run neither creates nor
+// opens the directory.
+func newSaveScope(dir string, noWrite, dryRun bool) (*saveScope, error) {
 	switch {
 	case noWrite:
 		return &saveScope{refusal: "--no-write forbids saving files"}, nil
 	case dir == "":
 		return &saveScope{refusal: "start `olk mcp` with --download-dir to allow it"}, nil
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving --download-dir: %w", err)
+	}
+	if dryRun {
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = real
+		}
+		return &saveScope{path: filepath.Clean(abs)}, nil
+	}
+	if err := os.MkdirAll(abs, 0o700); err != nil {
 		return nil, fmt.Errorf("creating --download-dir: %w", err)
 	}
-	real, err := filepath.EvalSymlinks(dir)
+	real, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving --download-dir: %w", err)
 	}
-	real, err = filepath.Abs(real)
+	root, err := os.OpenRoot(real)
 	if err != nil {
-		return nil, fmt.Errorf("resolving --download-dir: %w", err)
+		return nil, fmt.Errorf("opening --download-dir: %w", err)
 	}
-	info, err := os.Stat(real)
-	if err != nil {
-		return nil, fmt.Errorf("checking --download-dir: %w", err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("--download-dir %s is not a directory", dir)
-	}
-	return &saveScope{root: real}, nil
+	return &saveScope{path: real, root: root}, nil
 }
 
 // enabled reports whether this scope permits any save.
-func (s *saveScope) enabled() bool { return s.root != "" }
+func (s *saveScope) enabled() bool { return s.path != "" }
 
-// dir confines an output directory. A relative one is taken under the root, so
-// the default "." means the root itself. Every existing component, symlinks
-// resolved, must stay inside the root, both before and after the missing ones
-// are created.
-func (s *saveScope) dir(out string) (string, error) {
+// rel returns out as a path relative to the root, refusing anything that
+// lexically leaves it. A relative out is taken under the root, so the default
+// "." is the root itself. Symlinks are left to os.Root, which refuses any that
+// lead outside when the path is used.
+func (s *saveScope) rel(out string) (string, error) {
 	if !s.enabled() {
 		return "", fmt.Errorf("%w: %s", errSavesOff, s.refusal)
 	}
 	if !filepath.IsAbs(out) {
-		out = filepath.Join(s.root, out)
+		out = filepath.Join(s.path, out)
 	}
-	out = filepath.Clean(out)
-	if !within(s.root, out) {
-		return "", fmt.Errorf("%s is outside --download-dir %s", out, s.root)
+	rel, err := filepath.Rel(s.path, filepath.Clean(out))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s is outside --download-dir %s", out, s.path)
 	}
-	if err := s.checkResolved(existingAncestor(out)); err != nil {
+	return rel, nil
+}
+
+// dir confines and creates an output directory, returning it as an absolute
+// path for display and for writeNew.
+func (s *saveScope) dir(out string) (string, error) {
+	rel, err := s.rel(out)
+	if err != nil {
 		return "", err
 	}
-	if err := validateOutDir(out); err != nil {
-		return "", err
+	if s.root != nil {
+		if err := s.root.MkdirAll(rel, 0o700); err != nil {
+			return "", fmt.Errorf("creating output directory: %w", err)
+		}
 	}
-	if err := s.checkResolved(out); err != nil {
-		return "", err
-	}
-	return out, nil
+	return filepath.Join(s.path, rel), nil
 }
 
 // file confines an output file path: its directory as dir does, and its name
@@ -91,50 +104,33 @@ func (s *saveScope) file(out string) (string, error) {
 	if name == "." || name == ".." || name == string(filepath.Separator) {
 		return "", fmt.Errorf("%s does not name a file", out)
 	}
-	dir := filepath.Dir(out)
-	if !filepath.IsAbs(out) {
-		dir = filepath.Join(s.root, dir)
+	if !filepath.IsAbs(out) && s.enabled() {
+		out = filepath.Join(s.path, out)
 	}
-	d, err := s.dir(dir)
+	d, err := s.dir(filepath.Dir(out))
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(d, name), nil
 }
 
-func (s *saveScope) checkResolved(path string) error {
-	real, err := filepath.EvalSymlinks(path)
+// writeNew creates name in dir through the root, never overwriting; see
+// writeExclusive.
+func (s *saveScope) writeNew(dir, name string, content []byte) (string, error) {
+	rel, err := s.rel(dir)
 	if err != nil {
-		return fmt.Errorf("resolving %s: %w", path, err)
+		return "", err
 	}
-	if !within(s.root, real) {
-		return fmt.Errorf("%s resolves outside --download-dir %s", path, s.root)
+	if s.root == nil {
+		return "", errors.New("dry run: nothing is written")
 	}
-	return nil
-}
-
-// existingAncestor returns path or its nearest ancestor that exists.
-func existingAncestor(path string) string {
-	for {
-		if _, err := os.Lstat(path); err == nil {
-			return path
-		}
-		parent := filepath.Dir(path)
-		if parent == path {
-			return path
-		}
-		path = parent
+	saved, err := writeExclusive(func(p string) (*os.File, error) {
+		return s.root.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	}, filepath.Join(rel, name), content)
+	if saved != "" {
+		saved = filepath.Join(s.path, saved)
 	}
-}
-
-// within reports whether path is root or lies beneath it. Both must be clean
-// and absolute.
-func within(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+	return saved, err
 }
 
 // saveDir validates and creates the directory a command writes into: as given
@@ -156,4 +152,13 @@ func (r *RunContext) saveFile(out string) (string, error) {
 		return r.saves.file(out)
 	}
 	return out, nil
+}
+
+// writeNew creates name in a directory from saveDir or saveFile without
+// overwriting anything, returning the path written.
+func (r *RunContext) writeNew(dir, name string, content []byte) (string, error) {
+	if r.saves != nil {
+		return r.saves.writeNew(dir, name, content)
+	}
+	return safeWriteFile(filepath.Join(dir, name), content)
 }

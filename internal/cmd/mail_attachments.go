@@ -41,37 +41,34 @@ func validateOutDir(dir string) error {
 // safeWriteFile writes content to path, refusing to overwrite existing files.
 // Appends a numeric suffix (e.g., "file(1).pdf") to avoid collisions.
 func safeWriteFile(path string, content []byte) (string, error) {
-	// Try the original path first with O_EXCL to prevent overwrite.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err == nil {
+	return writeExclusive(func(p string) (*os.File, error) {
+		return os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	}, path, content)
+}
+
+// writeExclusive creates path with create, which must refuse an existing file,
+// trying "name(1).ext" and so on after a collision. It returns the path used.
+func writeExclusive(create func(string) (*os.File, error), path string, content []byte) (string, error) {
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	for i := 0; i < 1000; i++ {
+		candidate := path
+		if i > 0 {
+			candidate = fmt.Sprintf("%s(%d)%s", base, i, ext)
+		}
+		f, err := create(candidate)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
 		_, writeErr := f.Write(content)
 		closeErr := f.Close()
 		if writeErr != nil {
-			return path, writeErr
+			return candidate, writeErr
 		}
-		return path, closeErr
-	}
-	if !os.IsExist(err) {
-		return "", err
-	}
-
-	// File exists — find an available name with a numeric suffix.
-	ext := filepath.Ext(path)
-	base := strings.TrimSuffix(path, ext)
-	for i := 1; i < 1000; i++ {
-		candidate := fmt.Sprintf("%s(%d)%s", base, i, ext)
-		f, err = os.OpenFile(candidate, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err == nil {
-			_, writeErr := f.Write(content)
-			closeErr := f.Close()
-			if writeErr != nil {
-				return candidate, writeErr
-			}
-			return candidate, closeErr
-		}
-		if !os.IsExist(err) {
-			return "", err
-		}
+		return candidate, closeErr
 	}
 	return "", fmt.Errorf("could not find available filename for %s after 1000 attempts", filepath.Base(path))
 }
@@ -168,7 +165,7 @@ func saveAttachment(
 		return "", err
 	}
 	filename := sanitizeFilename(att.Name)
-	saved, err := safeWriteFile(filepath.Join(outDir, filename), att.Content)
+	saved, err := ctx.writeNew(outDir, filename, att.Content)
 	if err != nil {
 		return "", fmt.Errorf("writing file %q: %w", filename, err)
 	}
@@ -208,9 +205,7 @@ func (c *MailAttachmentsCmd) Run(ctx *RunContext) error {
 			return err
 		}
 
-		filename := sanitizeFilename(att.Name)
-		outPath := filepath.Join(outDir, filename)
-		saved, err := safeWriteFile(outPath, att.Content)
+		saved, err := ctx.writeNew(outDir, sanitizeFilename(att.Name), att.Content)
 		if err != nil {
 			return fmt.Errorf("writing file: %w", err)
 		}

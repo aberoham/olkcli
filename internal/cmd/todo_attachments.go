@@ -135,6 +135,12 @@ func (c *TodoAttachDownloadCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
+	if ctx.Flags.DryRun {
+		fmt.Printf("Would download attachment %s from task %s to %s\n", outfmt.Sanitize(c.AttachmentID),
+			outfmt.Sanitize(c.TaskID), outfmt.Sanitize(c.Out))
+		return nil
+	}
+
 	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
