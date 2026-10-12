@@ -118,7 +118,8 @@ type attachmentSaveResult struct {
 func (c *MailAttachmentsCmd) saveAll(
 	ctx *RunContext, client *graphapi.Client, target string, attachments []graphapi.Attachment,
 ) error {
-	if err := validateOutDir(c.Out); err != nil {
+	outDir, err := ctx.saveDir(c.Out)
+	if err != nil {
 		return err
 	}
 	structured := ctx.Flags.JSON || ctx.Flags.WrapUntrusted
@@ -127,7 +128,7 @@ func (c *MailAttachmentsCmd) saveAll(
 	for i := range attachments {
 		a := &attachments[i]
 		result := attachmentSaveResult{ID: a.ID, Name: a.Name}
-		saved, err := saveAttachment(ctx, client, target, c.ID, a, c.Out)
+		saved, err := saveAttachment(ctx, client, target, c.ID, a, outDir)
 		switch {
 		case err != nil:
 			failed++
@@ -202,8 +203,8 @@ func (c *MailAttachmentsCmd) Run(ctx *RunContext) error {
 		}
 		// Size is validated in the API layer (graphapi/mail.go).
 
-		outDir := c.Out
-		if err := validateOutDir(outDir); err != nil {
+		outDir, err := ctx.saveDir(c.Out)
+		if err != nil {
 			return err
 		}
 
