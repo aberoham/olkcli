@@ -19,7 +19,9 @@ func readLocalFile(path string, limit int64) ([]byte, error) {
 	if err := checkLocalFile(path, info, limit); err != nil {
 		return nil, err
 	}
-	f, err := os.Open(path)
+	// Opened without blocking, so a pipe swapped in since the check is
+	// refused below rather than waited on.
+	f, err := openNoBlock(path)
 	if err != nil {
 		return nil, err
 	}
