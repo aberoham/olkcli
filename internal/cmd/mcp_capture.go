@@ -7,10 +7,9 @@ import (
 	"sync"
 )
 
-// captureMu serializes every tool invocation. captureStd reassigns the
-// process-global os.Stdout/os.Stderr, so two captures must never run
-// concurrently. This makes MCP tool execution effectively single-flight; the
-// limitation is documented in the mcp command help.
+// captureMu keeps two captures from overlapping: captureStd reassigns the
+// process-global os.Stdout/os.Stderr. MCP tool calls are already serialized,
+// parsing included, by callSlot; this guards any other caller.
 var captureMu sync.Mutex
 
 // captureStd runs fn while redirecting os.Stdout and os.Stderr to in-memory
