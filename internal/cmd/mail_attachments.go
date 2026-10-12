@@ -97,6 +97,22 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
+// savedFile reports one file a command wrote. Its name came from the sender.
+type savedFile struct {
+	Path string `json:"path" untrusted:"true"`
+}
+
+// printSaved reports a saved file: structured under --json or
+// --wrap-untrusted, so an agent gets the sender-chosen name wrapped; as a
+// terminal-safe line otherwise.
+func printSaved(ctx *RunContext, saved string) error {
+	if ctx.Flags.JSON || ctx.Flags.WrapUntrusted {
+		return ctx.Printer().PrintJSON(savedFile{Path: saved}, 1, "")
+	}
+	fmt.Printf("Saved: %s\n", outfmt.Sanitize(saved))
+	return nil
+}
+
 // attachmentSaveResult reports one attachment of a --save run. The name, the
 // path built from it and any error that quotes it all come from the sender.
 type attachmentSaveResult struct {
@@ -134,7 +150,7 @@ func (c *MailAttachmentsCmd) saveAll(
 				fmt.Fprintf(os.Stderr, "Failed: %s: %s\n", outfmt.Sanitize(a.Name), outfmt.Sanitize(err.Error()))
 			}
 		case !structured:
-			fmt.Printf("Saved: %s\n", saved)
+			fmt.Printf("Saved: %s\n", outfmt.Sanitize(saved))
 		}
 		result.Path = saved
 		results = append(results, result)
@@ -209,8 +225,7 @@ func (c *MailAttachmentsCmd) Run(ctx *RunContext) error {
 		if err != nil {
 			return fmt.Errorf("writing file: %w", err)
 		}
-		fmt.Printf("Saved: %s\n", saved)
-		return nil
+		return printSaved(ctx, saved)
 	}
 
 	attachments, err := client.GetAttachments(ctx.Ctx, target, c.ID)

@@ -168,8 +168,7 @@ func (c *TodoAttachDownloadCmd) Run(ctx *RunContext) error {
 		return fmt.Errorf("writing file: %w", err)
 	}
 
-	fmt.Printf("Saved: %s\n", saved)
-	return nil
+	return printSaved(ctx, saved)
 }
 
 // TodoAttachDeleteCmd deletes an attachment from a task.

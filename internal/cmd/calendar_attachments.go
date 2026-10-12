@@ -150,8 +150,7 @@ func (c *CalendarAttachmentsDownloadCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return fmt.Errorf("writing file: %w", err)
 	}
-	fmt.Printf("Saved: %s\n", saved)
-	return nil
+	return printSaved(ctx, saved)
 }
 
 // CalendarAttachmentsDeleteCmd deletes an attachment from an event.
