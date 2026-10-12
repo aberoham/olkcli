@@ -231,9 +231,9 @@ func withDownloadOut(b *toolBinding, args map[string]any) map[string]any {
 			if filepath.IsAbs(s) || strings.HasPrefix(s, "~") {
 				return args
 			}
-			out = filepath.Join(b.env.saves.root, s)
+			out = filepath.Join(b.env.saves.path, s)
 		case f.HasDefault && f.Default != "":
-			out = b.env.saves.root
+			out = b.env.saves.path
 		default:
 			return args
 		}

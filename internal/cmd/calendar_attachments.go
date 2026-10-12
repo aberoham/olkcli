@@ -129,6 +129,11 @@ func (c *CalendarAttachmentsDownloadCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
+	if ctx.Flags.DryRun {
+		fmt.Printf("Would download attachment %s from event %s%s to %s\n", outfmt.Sanitize(c.AttachmentID),
+			outfmt.Sanitize(c.EventID), mailboxSuffix("in", target), outfmt.Sanitize(c.Out))
+		return nil
+	}
 	client, err := ctx.GraphClient()
 	if err != nil {
 		return err
@@ -141,8 +146,7 @@ func (c *CalendarAttachmentsDownloadCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
-	outPath := filepath.Join(outDir, sanitizeFilename(attachment.Name))
-	saved, err := safeWriteFile(outPath, content)
+	saved, err := ctx.writeNew(outDir, sanitizeFilename(attachment.Name), content)
 	if err != nil {
 		return fmt.Errorf("writing file: %w", err)
 	}

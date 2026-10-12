@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/term"
@@ -29,6 +30,10 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target s
 	if err := validateEMLStdout(c.Out, ctx.Flags.JSON, ctx.Flags.WrapUntrusted, term.IsTerminal(int(os.Stdout.Fd()))); err != nil {
 		return err
 	}
+	if c.Out != "" && ctx.Flags.DryRun {
+		fmt.Printf("Would export message %s to %s\n", outfmt.Sanitize(c.ID), outfmt.Sanitize(c.Out))
+		return nil
+	}
 	content, err := client.GetMessageMIME(ctx.Ctx, target, c.ID)
 	if err != nil {
 		return err
@@ -41,7 +46,7 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target s
 	if err != nil {
 		return err
 	}
-	saved, err := safeWriteFile(path, content)
+	saved, err := ctx.writeNew(filepath.Dir(path), filepath.Base(path), content)
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", c.Out, err)
 	}
