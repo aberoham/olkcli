@@ -11,8 +11,8 @@ import (
 // AutoReplySettings is a simplified auto-reply configuration for output
 type AutoReplySettings struct {
 	Status           string `json:"status"`
-	InternalMessage  string `json:"internalMessage"`
-	ExternalMessage  string `json:"externalMessage"`
+	InternalMessage  string `json:"internalMessage" untrusted:"true"`
+	ExternalMessage  string `json:"externalMessage" untrusted:"true"`
 	StartTime        string `json:"startTime,omitempty"`
 	EndTime          string `json:"endTime,omitempty"`
 	ExternalAudience string `json:"externalAudience"`
