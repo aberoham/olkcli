@@ -473,30 +473,30 @@ func buildArgv(b *toolBinding, args map[string]any) ([]string, error) {
 	return argv, nil
 }
 
+// Every value is joined to its flag as --name=value, so a value that begins
+// with "--" stays a value, and an explicit false reaches the command instead of
+// reading as absent: `"all-day": false` must clear the setting, not leave it.
 func flagTokens(f *kong.Flag, v any) ([]string, error) {
-	name := "--" + f.Name
+	name := "--" + f.Name + "="
 	switch {
 	case f.IsBool():
 		on, err := asBool(v)
 		if err != nil {
 			return nil, fmt.Errorf("flag %q: %w", f.Name, err)
 		}
-		if on {
-			return []string{name}, nil
-		}
-		return nil, nil
+		return []string{name + strconv.FormatBool(on)}, nil
 	case f.IsSlice():
 		arr, ok := v.([]any)
 		if !ok {
 			return nil, fmt.Errorf("flag %q expects an array", f.Name)
 		}
-		toks := make([]string, 0, len(arr)*2)
+		toks := make([]string, 0, len(arr))
 		for _, e := range arr {
-			toks = append(toks, name, sprintArg(e))
+			toks = append(toks, name+sprintArg(e))
 		}
 		return toks, nil
 	default:
-		return []string{name, sprintArg(v)}, nil
+		return []string{name + sprintArg(v)}, nil
 	}
 }
 
