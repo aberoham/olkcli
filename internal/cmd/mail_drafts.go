@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/rlrghb/olkcli/internal/graphapi"
@@ -79,17 +77,9 @@ func (c *MailDraftsCreateCmd) Run(ctx *RunContext) error {
 		return err
 	}
 
-	body := c.Body
-	// Read from stdin if no body provided
-	if body == "" {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			data, err := io.ReadAll(io.LimitReader(os.Stdin, 4<<20)) // 4 MB limit
-			if err != nil {
-				return fmt.Errorf("reading stdin: %w", err)
-			}
-			body = strings.TrimSpace(string(data))
-		}
+	body, err := ctx.bodyOrStdin(c.Body)
+	if err != nil {
+		return err
 	}
 
 	if len(body) > maxBodySize {

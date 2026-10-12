@@ -76,6 +76,30 @@ type RunContext struct {
 	store  secrets.Store
 	cfg    *config.Config
 	saves  *saveScope // set for MCP tool calls; nil for the CLI
+	// stdinIsProtocol marks an MCP tool call, whose stdin is the client's
+	// connection rather than input for the command.
+	stdinIsProtocol bool
+}
+
+// bodyOrStdin returns body, or when it is empty a body piped on stdin. An MCP
+// call never reads stdin: doing so would consume the client's next messages
+// as the body.
+func (r *RunContext) bodyOrStdin(body string) (string, error) {
+	if body != "" {
+		return body, nil
+	}
+	if r.stdinIsProtocol {
+		return "", fmt.Errorf("body is required")
+	}
+	stat, err := os.Stdin.Stat()
+	if err != nil || stat.Mode()&os.ModeCharDevice != 0 {
+		return "", nil
+	}
+	data, err := io.ReadAll(io.LimitReader(os.Stdin, 4<<20)) // 4 MB limit
+	if err != nil {
+		return "", fmt.Errorf("reading stdin: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 // Store returns the keyring store, initializing if needed

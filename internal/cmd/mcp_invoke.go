@@ -64,7 +64,7 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 		if saves == nil {
 			saves = &saveScope{refusal: "no --download-dir is set"}
 		}
-		runCtx := &RunContext{Ctx: callCtx, Flags: &cli.RootFlags, saves: saves}
+		runCtx := &RunContext{Ctx: callCtx, Flags: &cli.RootFlags, saves: saves, stdinIsProtocol: true}
 
 		stdout, stderr, runErr := captureStd(func() error {
 			return kctx.Run(runCtx)
