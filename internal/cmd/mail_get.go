@@ -37,7 +37,11 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, client *graphapi.Client, target s
 		_, err = os.Stdout.Write(content)
 		return err
 	}
-	saved, err := safeWriteFile(c.Out, content)
+	path, err := ctx.saveFile(c.Out)
+	if err != nil {
+		return err
+	}
+	saved, err := safeWriteFile(path, content)
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", c.Out, err)
 	}

@@ -25,6 +25,21 @@ cap tool output. Unknown arguments are rejected against the generated schema.
 The Graph client independently enforces `--no-write` and `--no-send`, so the
 same safety guarantees apply to CLI, MCP, and scripts.
 
+## Saving files
+
+Tools cannot write local files unless the server names a directory for them:
+
+```bash
+olk mcp --download-dir ~/Downloads/olk
+```
+
+Attachment saves and `.eml` exports then land under that directory. A relative
+`out` is taken under it; anything resolving outside it, including through a
+symlink, is refused. Without `--download-dir`, or with `--no-write`, saving is
+refused and `calendar_attachments_download` is not exposed. The agent reads
+untrusted mail, so a path it chooses could otherwise create files such as shell
+start-up scripts or launch agents.
+
 ## Delegated mailboxes
 
 A tool call runs the command against the mailbox the server was started with:

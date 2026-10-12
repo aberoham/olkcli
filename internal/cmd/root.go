@@ -75,6 +75,7 @@ type RunContext struct {
 	client *graphapi.Client
 	store  secrets.Store
 	cfg    *config.Config
+	saves  *saveScope // set for MCP tool calls; nil for the CLI
 }
 
 // Store returns the keyring store, initializing if needed

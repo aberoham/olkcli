@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -57,7 +58,13 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 		callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		runCtx := &RunContext{Ctx: callCtx, Flags: &cli.RootFlags}
+		// A call's local writes are always confined; a binding without a
+		// scope refuses them all.
+		saves := b.env.saves
+		if saves == nil {
+			saves = &saveScope{refusal: "no --download-dir is set"}
+		}
+		runCtx := &RunContext{Ctx: callCtx, Flags: &cli.RootFlags, saves: saves}
 
 		stdout, stderr, runErr := captureStd(func() error {
 			return kctx.Run(runCtx)
@@ -201,6 +208,45 @@ func rejectUnknownArgs(b *toolBinding, args map[string]any) error {
 	return nil
 }
 
+// outFlagName is the flag through which a tool writes local files.
+const outFlagName = "out"
+
+// withDownloadOut takes an agent's relative out path, or the flag's default,
+// under the operator's --download-dir. Kong would otherwise resolve both
+// against the server's working directory. The command's saveScope still checks
+// whatever results, so this only decides where a relative path points.
+func withDownloadOut(b *toolBinding, args map[string]any) map[string]any {
+	if !b.env.savesEnabled() {
+		return args
+	}
+	for _, f := range b.node.Flags {
+		if f.Name != outFlagName {
+			continue
+		}
+		v, given := args[outFlagName]
+		var out string
+		switch {
+		case given:
+			s := sprintArg(v)
+			if filepath.IsAbs(s) || strings.HasPrefix(s, "~") {
+				return args
+			}
+			out = filepath.Join(b.env.saves.root, s)
+		case f.HasDefault && f.Default != "":
+			out = b.env.saves.root
+		default:
+			return args
+		}
+		copied := make(map[string]any, len(args)+1)
+		for k, val := range args {
+			copied[k] = val
+		}
+		copied[outFlagName] = out
+		return copied
+	}
+	return args
+}
+
 // capText truncates s to at most limit bytes (on a UTF-8 boundary), appending a
 // notice so the agent knows output was clipped rather than silently complete.
 func capText(s string, limit int) string {
@@ -313,6 +359,7 @@ func classifyError(msg string) (code, action string) {
 // precede the literal "--" so kong never treats them as positionals.
 func buildArgv(b *toolBinding, args map[string]any) ([]string, error) {
 	argv := append([]string{}, b.path...)
+	args = withDownloadOut(b, args)
 
 	for _, f := range b.node.Flags {
 		if f.Hidden || f.Name == helpFlagName {
