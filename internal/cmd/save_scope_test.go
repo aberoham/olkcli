@@ -194,9 +194,9 @@ func TestSaveScope_RootPathSwapped(t *testing.T) {
 }
 
 func TestSaveScope_RootMayItselfBeASymlink(t *testing.T) {
-	real := t.TempDir()
+	target := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
 	s := mustScope(t, link, false, false)
@@ -207,7 +207,7 @@ func TestSaveScope_RootMayItselfBeASymlink(t *testing.T) {
 	if _, err := s.writeNew(dir, "x", []byte("x")); err != nil {
 		t.Fatalf("writeNew under a symlinked root: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(real, "sub", "x")); err != nil {
+	if _, err := os.Stat(filepath.Join(target, "sub", "x")); err != nil {
 		t.Error(err)
 	}
 }
@@ -278,11 +278,11 @@ func attachmentGraph(calls *int) func(*http.Request) *http.Response {
 	}
 }
 
-// runSaving runs a command as an MCP call would, with saves confined to s, and
-// returns how many Graph requests it made.
-func runSaving(t *testing.T, s *saveScope, argv ...string) (calls int, err error) {
+// runSaving runs a command as an MCP call would, with saves confined to s.
+func runSaving(t *testing.T, s *saveScope, argv ...string) error {
 	t.Helper()
-	client := testMailListClient(t, attachmentGraph(&calls))
+	calls := 0
+	client := testMailListClient(t, attachmentGraph(&calls)) //nolint:bodyclose // a fake transport; the client closes what it returns
 	cli := &CLI{}
 	parser, err := newKongParser(cli)
 	if err != nil {
@@ -295,7 +295,7 @@ func runSaving(t *testing.T, s *saveScope, argv ...string) (calls int, err error
 	_, _, err = captureStd(func() error {
 		return kctx.Run(&RunContext{Ctx: context.Background(), Flags: &cli.RootFlags, client: client, saves: s})
 	})
-	return calls, err
+	return err
 }
 
 // Each command an MCP tool reaches must write through the scope: inside it
@@ -318,7 +318,7 @@ func TestSavingCommandsWriteOnlyThroughTheScope(t *testing.T) {
 	for name, argv := range commands {
 		t.Run(name, func(t *testing.T) {
 			s := newTestScope(t)
-			if _, err := runSaving(t, s, argv(filepath.Join(s.path, "in"))...); err != nil {
+			if err := runSaving(t, s, argv(filepath.Join(s.path, "in"))...); err != nil {
 				t.Fatalf("inside the root: %v", err)
 			}
 			if _, err := os.Stat(filepath.Join(s.path, "in", "authorized_keys")); err != nil {
@@ -326,12 +326,12 @@ func TestSavingCommandsWriteOnlyThroughTheScope(t *testing.T) {
 			}
 
 			outside := t.TempDir()
-			if _, err := runSaving(t, s, argv(outside)...); err == nil {
+			if err := runSaving(t, s, argv(outside)...); err == nil {
 				t.Error("a save outside the root succeeded")
 			}
 			assertEmpty(t, outside)
 
-			if _, err := runSaving(t, mustScope(t, "", false, false), argv(filepath.Join(s.path, "off"))...); !errors.Is(err, errSavesOff) {
+			if err := runSaving(t, mustScope(t, "", false, false), argv(filepath.Join(s.path, "off"))...); !errors.Is(err, errSavesOff) {
 				t.Errorf("saving with saves off = %v, want errSavesOff", err)
 			}
 		})
@@ -410,9 +410,9 @@ func TestAttachmentSaveSurvivesADirectorySwapMidDownload(t *testing.T) {
 	in := filepath.Join(s.path, "in")
 	outside := t.TempDir()
 	calls := 0
-	serve := attachmentGraph(&calls)
+	serve := attachmentGraph(&calls) //nolint:bodyclose // a fake transport; the client closes what it returns
 	swapped := false
-	client := testMailListClient(t, func(req *http.Request) *http.Response {
+	client := testMailListClient(t, func(req *http.Request) *http.Response { //nolint:bodyclose // a fake transport; the client closes what it returns
 		if !swapped && strings.Contains(req.URL.Path, "/attachments/") {
 			swapped = true
 			if err := os.Remove(in); err != nil {
@@ -461,7 +461,7 @@ func TestCLIEMLExportKeepsTheGivenPath(t *testing.T) {
 	}
 	out := filepath.Join(base, "a", "link") + "/../message.eml"
 	_, _, err := runMailCommand(t, []string{"mail", "get"}, []string{"msg-1", "--format", "eml", "--out", out},
-		func(req *http.Request) *http.Response { return graphMIMEResponse(req) })
+		graphMIMEResponse)
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
