@@ -92,7 +92,10 @@ func (r *RunContext) bodyOrStdin(body string) (string, error) {
 		return "", fmt.Errorf("body is required")
 	}
 	stat, err := os.Stdin.Stat()
-	if err != nil || stat.Mode()&os.ModeCharDevice != 0 {
+	if err != nil {
+		return "", fmt.Errorf("checking stdin for a body: %w", err)
+	}
+	if stat.Mode()&os.ModeCharDevice != 0 {
 		return "", nil
 	}
 	data, err := io.ReadAll(io.LimitReader(os.Stdin, 4<<20)) // 4 MB limit

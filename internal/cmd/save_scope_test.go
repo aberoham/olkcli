@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rlrghb/olkcli/internal/config"
+	"github.com/rlrghb/olkcli/internal/secrets"
 )
 
 // newTestScope returns a scope rooted in a fresh directory.
@@ -178,8 +181,11 @@ func TestSaveScope_RootPathSwapped(t *testing.T) {
 	if err := os.Symlink(outside, s.path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.writeNew(s.path, "x", []byte("x")); err != nil {
-		t.Fatalf("writeNew: %v", err)
+	// The write lands in the held directory, and the moved root is reported
+	// rather than a path that now names the symlink's target.
+	saved, err := s.writeNew(s.path, "x", []byte("x"))
+	if err == nil || !strings.Contains(err.Error(), "moved or replaced") || saved != "" {
+		t.Errorf("writeNew = %q, %v; want a moved-root error", saved, err)
 	}
 	assertEmpty(t, outside)
 	if _, err := os.Stat(filepath.Join(moved, "x")); err != nil {
@@ -340,8 +346,6 @@ func TestDownloadsHonourDryRun(t *testing.T) {
 		{"mail", "get", "msg-1", "--format", "eml", "--out", filepath.Join(out, "m.eml")},
 		{"todo", "attach", "download", "task-1", "att-1", "--list", "list-1", "--out", out},
 	} {
-		calls := 0
-		client := testMailListClient(t, attachmentGraph(&calls))
 		cli := &CLI{}
 		parser, err := newKongParser(cli)
 		if err != nil {
@@ -351,11 +355,14 @@ func TestDownloadsHonourDryRun(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %v: %v", argv, err)
 		}
+		// No account and an inert store: signing in would fail, so a preview
+		// must come before it.
 		stdout, _, err := captureStd(func() error {
-			return kctx.Run(&RunContext{Ctx: context.Background(), Flags: &cli.RootFlags, client: client})
+			return kctx.Run(&RunContext{Ctx: context.Background(), Flags: &cli.RootFlags,
+				cfg: &config.Config{}, store: &secrets.KeyringStore{}})
 		})
-		if err != nil || calls != 0 || !strings.HasPrefix(stdout, "Would ") {
-			t.Errorf("%v: output %q, %d requests, %v", argv, stdout, calls, err)
+		if err != nil || !strings.HasPrefix(stdout, "Would ") {
+			t.Errorf("%v: output %q, %v", argv, stdout, err)
 		}
 		if _, err := os.Stat(out); !os.IsNotExist(err) {
 			t.Errorf("%v: dry run created %s", argv, out)
@@ -436,4 +443,32 @@ func TestAttachmentSaveSurvivesADirectorySwapMidDownload(t *testing.T) {
 		t.Error("the save succeeded through the swapped-in symlink")
 	}
 	assertEmpty(t, outside)
+}
+
+// The CLI writes an export to --out exactly as given: a path through a
+// symlink and back up resolves as the operating system resolves it.
+func TestCLIEMLExportKeepsTheGivenPath(t *testing.T) {
+	base := t.TempDir()
+	target := filepath.Join(base, "b", "nested")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(base, "a"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(base, "a", "link")); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(base, "a", "link") + "/../message.eml"
+	_, _, err := runMailCommand(t, []string{"mail", "get"}, []string{"msg-1", "--format", "eml", "--out", out},
+		func(req *http.Request) *http.Response { return graphMIMEResponse(req) })
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "b", "message.eml")); err != nil {
+		t.Errorf("export did not follow the given path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "a", "message.eml")); !os.IsNotExist(err) {
+		t.Errorf("export was written to a lexically cleaned path")
+	}
 }

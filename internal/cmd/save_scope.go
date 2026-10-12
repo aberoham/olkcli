@@ -127,10 +127,26 @@ func (s *saveScope) writeNew(dir, name string, content []byte) (string, error) {
 	saved, err := writeExclusive(func(p string) (*os.File, error) {
 		return s.root.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	}, filepath.Join(rel, name), content)
-	if saved != "" {
-		saved = filepath.Join(s.path, saved)
+	if saved == "" {
+		return "", err
 	}
-	return saved, err
+	// The write went into the directory held open since start. If its path
+	// now names something else, that path would mislead, so say so instead.
+	if !s.stillAtPath() {
+		moved := fmt.Errorf("--download-dir %s was moved or replaced; %s is in the directory it named at start", s.path, saved)
+		return "", errors.Join(moved, err)
+	}
+	return filepath.Join(s.path, saved), err
+}
+
+// stillAtPath reports whether the root's path still names the held directory.
+func (s *saveScope) stillAtPath() bool {
+	held, err := s.root.Stat(".")
+	if err != nil {
+		return false
+	}
+	current, err := os.Stat(s.path)
+	return err == nil && os.SameFile(held, current)
 }
 
 // saveDir validates and creates the directory a command writes into: as given
@@ -145,16 +161,20 @@ func (r *RunContext) saveDir(out string) (string, error) {
 	return out, nil
 }
 
-// saveFile returns the file path a command writes to: as given for the CLI,
-// confined for an MCP call.
-func (r *RunContext) saveFile(out string) (string, error) {
-	if r.saves != nil {
-		return r.saves.file(out)
+// writeNewFile creates the file out without overwriting anything: exactly as
+// given for the CLI, confined for an MCP call.
+func (r *RunContext) writeNewFile(out string, content []byte) (string, error) {
+	if r.saves == nil {
+		return safeWriteFile(out, content)
 	}
-	return out, nil
+	path, err := r.saves.file(out)
+	if err != nil {
+		return "", err
+	}
+	return r.saves.writeNew(filepath.Dir(path), filepath.Base(path), content)
 }
 
-// writeNew creates name in a directory from saveDir or saveFile without
+// writeNew creates name in a directory from saveDir without
 // overwriting anything, returning the path written.
 func (r *RunContext) writeNew(dir, name string, content []byte) (string, error) {
 	if r.saves != nil {
