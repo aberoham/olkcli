@@ -72,27 +72,23 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 		}
 		runCtx := &RunContext{Ctx: callCtx, Flags: &cli.RootFlags, saves: saves, stdinIsProtocol: true}
 
-		stdout, stderr, runErr := captureStd(func() error {
+		limit := b.maxOutputBytes
+		if limit <= 0 {
+			limit = defaultMaxOutputBytes
+		}
+		stdout, stderr, runErr := captureStdLimit(limit, func() error {
 			return kctx.Run(runCtx)
 		})
 
 		if runErr != nil {
-			parts := []string{}
-			if s := strings.TrimSpace(stdout); s != "" {
-				parts = append(parts, s)
-			}
-			if s := strings.TrimSpace(stderr); s != "" {
-				parts = append(parts, s)
-			}
-			parts = append(parts, "error: "+runErr.Error())
-			return errorResult(strings.Join(parts, "\n")), nil
+			return failedResult(stdout, stderr, runErr, limit), nil
 		}
 
 		text := stdout
 		if s := strings.TrimSpace(stderr); s != "" {
 			text = strings.TrimRight(stdout, "\n") + "\n[stderr]\n" + s
 		}
-		text = capText(text, b.maxOutputBytes)
+		text = capText(text, limit)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: text}},
 		}, nil
@@ -276,6 +272,23 @@ func withDownloadOut(b *toolBinding, args map[string]any) map[string]any {
 		return copied
 	}
 	return args
+}
+
+// failedResult reports a failed call: whatever it printed, capped like any
+// output, then the error, which is kept even when the output fills the cap.
+func failedResult(stdout, stderr string, runErr error, limit int) *mcp.CallToolResult {
+	parts := []string{}
+	if s := strings.TrimSpace(stdout); s != "" {
+		parts = append(parts, s)
+	}
+	if s := strings.TrimSpace(stderr); s != "" {
+		parts = append(parts, s)
+	}
+	msg := capText("error: "+runErr.Error(), limit)
+	if len(parts) > 0 {
+		msg = capText(strings.Join(parts, "\n"), limit) + "\n" + msg
+	}
+	return errorResult(msg)
 }
 
 // capText truncates s to at most limit bytes (on a UTF-8 boundary), appending a
