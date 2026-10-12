@@ -1,0 +1,73 @@
+package graphapi
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+type pipelineFunc func(*http.Request) (*http.Response, error)
+
+func (f pipelineFunc) Next(req *http.Request, _ int) (*http.Response, error) { return f(req) }
+
+// failingBody yields data, then fails as a dropped connection would.
+type failingBody struct{ r io.Reader }
+
+var errDropped = errors.New("connection dropped")
+
+func (b *failingBody) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err == io.EOF {
+		return n, errDropped
+	}
+	return n, err
+}
+func (b *failingBody) Close() error { return nil }
+
+func logged(t *testing.T, status int, body io.ReadCloser) (*http.Response, string) {
+	t.Helper()
+	var log bytes.Buffer
+	m := &loggingMiddleware{out: &log}
+	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me", nil)
+	resp, err := m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: status, Status: http.StatusText(status), Header: http.Header{}, Body: body, Request: r}, nil
+	}), 0, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp, log.String()
+}
+
+// Under --verbose a download cut off mid-body must still fail, not end cleanly
+// with what arrived.
+func TestVerboseKeepsBodyReadErrors(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
+		resp, _ := logged(t, status, &failingBody{strings.NewReader("partial")})
+		data, err := io.ReadAll(resp.Body)
+		if !errors.Is(err, errDropped) {
+			t.Errorf("HTTP %d: read = %q, %v; want the dropped-connection error", status, data, err)
+		}
+	}
+}
+
+func TestVerboseDumpsOnlyErrorBodiesAndKeepsThemWhole(t *testing.T) {
+	resp, log := logged(t, http.StatusOK, io.NopCloser(strings.NewReader("secret-file-bytes")))
+	if strings.Contains(log, "secret-file-bytes") {
+		t.Errorf("a successful body was logged: %s", log)
+	}
+	if data, _ := io.ReadAll(resp.Body); string(data) != "secret-file-bytes" {
+		t.Errorf("successful body = %q", data)
+	}
+
+	long := strings.Repeat("e", verboseBodyLimit+10)
+	resp, log = logged(t, http.StatusBadRequest, io.NopCloser(strings.NewReader(long)))
+	if !strings.Contains(log, "…(truncated)") {
+		t.Error("an oversized error body was not marked truncated")
+	}
+	if data, _ := io.ReadAll(resp.Body); string(data) != long {
+		t.Errorf("error body came back %d bytes, want %d", len(data), len(long))
+	}
+}
