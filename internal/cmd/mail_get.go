@@ -52,7 +52,7 @@ func (c *MailGetCmd) writeEML(ctx *RunContext, target string) error {
 	if ctx.Flags.JSON {
 		return ctx.Printer().PrintJSON(emlExport{ID: c.ID, Path: saved}, 1, "")
 	}
-	fmt.Printf("Saved: %s\n", saved)
+	fmt.Printf("Saved: %s\n", outfmt.Sanitize(saved))
 	return nil
 }
 
@@ -78,7 +78,7 @@ func validateEMLStdout(out string, jsonMode, wrapUntrusted, terminal bool) error
 // emlExport reports where `mail get --format eml --out` saved the message.
 type emlExport struct {
 	ID   string `json:"id"`
-	Path string `json:"path"`
+	Path string `json:"path" untrusted:"true"` // ends in the --out name the caller chose
 }
 
 func (c *MailGetCmd) Run(ctx *RunContext) error {

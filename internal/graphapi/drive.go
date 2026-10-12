@@ -52,7 +52,7 @@ type DriveItemVersion struct {
 	ID         string `json:"id"`
 	ModifiedAt string `json:"lastModifiedDateTime"`
 	Size       int64  `json:"size"`
-	ModifiedBy string `json:"lastModifiedBy,omitempty"`
+	ModifiedBy string `json:"lastModifiedBy,omitempty" untrusted:"true"`
 }
 
 // ShareLink is a simplified sharing link for output.

@@ -63,9 +63,9 @@ type TodoAttachment struct {
 type TodoLinkedResource struct {
 	ID              string `json:"id"`
 	DisplayName     string `json:"displayName" untrusted:"true"`
-	ApplicationName string `json:"applicationName"`
-	ExternalID      string `json:"externalId"`
-	WebURL          string `json:"webUrl"`
+	ApplicationName string `json:"applicationName" untrusted:"true"`
+	ExternalID      string `json:"externalId" untrusted:"true"`
+	WebURL          string `json:"webUrl" untrusted:"true"`
 }
 
 // ListTodoLists returns all task lists in the target mailbox, or in the signed-in
