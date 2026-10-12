@@ -142,23 +142,39 @@ func (m *loggingMiddleware) Intercept(pipeline khttp.Pipeline, middlewareIndex i
 		fmt.Fprintf(w, "[verbose]     %s: %s\n", k, redactHeader(k, vs))
 	}
 
-	// Always capture body, but only dump (bounded) on non-2xx.
-	if resp.Body != nil {
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, verboseBodyLimit))
-		rest, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		resp.Body = io.NopCloser(bytes.NewReader(append(body, rest...)))
-		if readErr == nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+	// Only a non-2xx body is dumped, so only one is read here: a bounded
+	// prefix, put back in front of the rest of the stream. A successful body,
+	// such as a file download, passes through untouched, keeping both its
+	// streaming and any error that ends it early.
+	if resp.Body != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		prefix, readErr := io.ReadAll(io.LimitReader(resp.Body, verboseBodyLimit))
+		rest := io.Reader(resp.Body)
+		if readErr != nil {
+			fmt.Fprintf(w, "[verbose]     body: (read failed: %v)\n", readErr)
+			rest = errReader{readErr}
+		} else {
 			suffix := ""
-			if len(rest) > 0 {
+			if len(prefix) == verboseBodyLimit {
 				suffix = " …(truncated)"
 			}
-			fmt.Fprintf(w, "[verbose]     body: %s%s\n", string(body), suffix)
+			fmt.Fprintf(w, "[verbose]     body: %s%s\n", string(prefix), suffix)
 		}
+		resp.Body = readCloser{io.MultiReader(bytes.NewReader(prefix), rest), resp.Body}
 	}
 
 	return resp, nil
 }
+
+// readCloser pairs a reader with the closer of the body it replaces.
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// errReader returns err once its data, read before it, runs out.
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
 
 // verboseBodyLimit bounds how much of a response body the verbose dump prints,
 // so a large/hostile response can't amplify memory or flood the log.
