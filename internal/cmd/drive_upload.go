@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 
@@ -124,12 +124,7 @@ func uploadChunks(ctx context.Context, httpClient *http.Client, uploadURL string
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			// The upload URL is pre-authenticated, and *url.Error quotes it.
-			var ue *url.Error
-			if errors.As(err, &ue) {
-				err = ue.Err
-			}
-			return fmt.Errorf("uploading chunk: %w", err)
+			return fmt.Errorf("uploading chunk: %w", transportFailure(err))
 		}
 
 		if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
@@ -153,4 +148,20 @@ func uploadChunks(ctx context.Context, httpClient *http.Client, uploadURL string
 	}
 
 	return nil
+}
+
+// transportFailure describes a failed request without its error text. The
+// upload URL is pre-authenticated, and Go's errors quote it: *url.Error does,
+// and so does a malformed redirect's Location, which may carry a token too.
+func transportFailure(err error) error {
+	var ne net.Error
+	switch {
+	case errors.Is(err, context.Canceled):
+		return context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return context.DeadlineExceeded
+	case errors.As(err, &ne) && ne.Timeout():
+		return errors.New("timed out")
+	}
+	return errors.New("connection failed")
 }

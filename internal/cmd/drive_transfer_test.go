@@ -31,7 +31,13 @@ func TestUploadChunks(t *testing.T) {
 		{"completed", data, func(r *http.Request) (*http.Response, error) { return statusResponse(r, http.StatusCreated), nil }, ""},
 		{"file shrank", data[:60], func(r *http.Request) (*http.Response, error) { return statusResponse(r, http.StatusCreated), nil }, "reading file chunk"},
 		{"never confirmed", data, func(r *http.Request) (*http.Response, error) { return statusResponse(r, http.StatusAccepted), nil }, "upload incomplete"},
-		{"transport failure", data, func(*http.Request) (*http.Response, error) { return nil, errors.New("connection reset") }, "connection reset"},
+		{"transport failure", data, func(*http.Request) (*http.Response, error) { return nil, errors.New("connection reset") }, "connection failed"},
+		{"malformed redirect", data, func(r *http.Request) (*http.Response, error) {
+			resp := statusResponse(r, http.StatusFound)
+			resp.Header.Set("Location", "https://example.sharepoint.com/%zz?tempauth=SECRET-TOKEN")
+			return resp, nil
+		}, "connection failed"},
+		{"cancelled", data, func(*http.Request) (*http.Response, error) { return nil, context.Canceled }, "context canceled"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := uploadChunks(context.Background(), &http.Client{Transport: tc.transport}, uploadURL, bytes.NewReader(tc.file), int64(len(data)))

@@ -71,3 +71,28 @@ func TestMailSendRefusesADeviceAttachment(t *testing.T) {
 		t.Errorf("err = %v, calls = %d; want a not-regular-file refusal and no request", err, calls)
 	}
 }
+
+// A pipe swapped in after the path check is opened without waiting for a
+// writer, so the open file's own check can refuse it.
+func TestOpenNoBlockDoesNotWaitOnAPipe(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		f, err := openNoBlock(fifo)
+		if err == nil {
+			_ = f.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("openNoBlock: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("opening a pipe blocked")
+	}
+}
