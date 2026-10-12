@@ -314,3 +314,20 @@ func TestCuratedRegistry_SafeWritesOptIn(t *testing.T) {
 		}
 	}
 }
+
+// Deleting a meeting you organize cancels it for every attendee, so --no-send
+// withholds calendar_delete even when it is allowed as destructive.
+func TestNoSendHidesNotifyingDeletes(t *testing.T) {
+	allow := setOf("calendar_delete", "mail_delete")
+	sendOK := bindingsMap(t, &mcpConfig{allowDestructive: allow})
+	noSend := bindingsMap(t, &mcpConfig{allowDestructive: allow, noSend: true})
+	if _, ok := sendOK["calendar_delete"]; !ok {
+		t.Error("calendar_delete withheld without --no-send")
+	}
+	if _, ok := noSend["calendar_delete"]; ok {
+		t.Error("calendar_delete exposed under --no-send")
+	}
+	if _, ok := noSend["mail_delete"]; !ok {
+		t.Error("mail_delete withheld under --no-send; it notifies no one")
+	}
+}
