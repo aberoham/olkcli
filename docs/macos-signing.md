@@ -8,7 +8,8 @@ The `release` GitHub environment holds `MACOS_CERTIFICATE_P12_BASE64` (the
 base64-encoded, password-protected PKCS #12 certificate/private-key bundle)
 and `MACOS_CERTIFICATE_PASSWORD`. Its variables are `MACOS_SIGNING_IDENTITY`
 (the certificate SHA-1 fingerprint) and `APPLE_TEAM_ID`. Restrict this
-environment to the release tags accepted by the workflow. Require approval
+environment to the release tags accepted by the workflow and to `next`, from
+which `mirror-upstream.yml` deploys. Require approval
 by `aberoham`, allow self-review, and disable administrator bypass. Protect
 `v*` tags with an admin-only creation/update/deletion ruleset. These live
 settings must be applied before the workflow is enabled. The job actor guard
@@ -39,3 +40,17 @@ no Apple credentials, and computes checksums over the final signed archives.
 Bare binaries cannot be stapled; macOS checks the ticket online. The cask
 preserves quarantine. A notarization timeout stops publication; inspect the
 submission status before retrying a release.
+
+## Provenance and upstream mirrors
+
+The publish job attests every file in `checksums.txt` with
+`actions/attest-build-provenance`; check a download with
+`gh attestation verify <file> --repo aberoham/olkcli`.
+
+`mirror-upstream.yml` builds upstream's stable releases from the commit
+upstream tagged, checked out from `rlrghb/olkcli`, with this fork's GoReleaser
+configs and signing, and publishes them as `upstream-vX.Y.Z`. Each carries
+`olk_X.Y.Z_source.txt`, attested with the archives, naming the upstream commit.
+A schedule mirrors only releases newer than the newest mirror; run it by hand
+with a tag for anything else. Don't push to `next` while a mirror run is in
+flight: its release tag goes on the run's own commit.
