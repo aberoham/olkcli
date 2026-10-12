@@ -28,11 +28,13 @@ func (b *failingBody) Read(p []byte) (int, error) {
 }
 func (b *failingBody) Close() error { return nil }
 
-func logged(t *testing.T, status int, body io.ReadCloser) (*http.Response, string) {
+// logged runs one response through the logger, returning it and the log. The
+// caller reads the returned body; tests close nothing real.
+func logged(t *testing.T, status int, body io.ReadCloser) (resp *http.Response, logText string) {
 	t.Helper()
 	var log bytes.Buffer
 	m := &loggingMiddleware{out: &log}
-	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me", nil)
+	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me", http.NoBody)
 	resp, err := m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: status, Status: http.StatusText(status), Header: http.Header{}, Body: body, Request: r}, nil
 	}), 0, req)
@@ -48,6 +50,7 @@ func TestVerboseKeepsBodyReadErrors(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
 		resp, _ := logged(t, status, &failingBody{strings.NewReader("partial")})
 		data, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 		if !errors.Is(err, errDropped) {
 			t.Errorf("HTTP %d: read = %q, %v; want the dropped-connection error", status, data, err)
 		}
@@ -56,6 +59,7 @@ func TestVerboseKeepsBodyReadErrors(t *testing.T) {
 
 func TestVerboseDumpsOnlyErrorBodiesAndKeepsThemWhole(t *testing.T) {
 	resp, log := logged(t, http.StatusOK, io.NopCloser(strings.NewReader("secret-file-bytes")))
+	defer resp.Body.Close()
 	if strings.Contains(log, "secret-file-bytes") {
 		t.Errorf("a successful body was logged: %s", log)
 	}
@@ -65,6 +69,7 @@ func TestVerboseDumpsOnlyErrorBodiesAndKeepsThemWhole(t *testing.T) {
 
 	long := strings.Repeat("e", verboseBodyLimit+10)
 	resp, log = logged(t, http.StatusBadRequest, io.NopCloser(strings.NewReader(long)))
+	defer resp.Body.Close()
 	if !strings.Contains(log, "…(truncated)") {
 		t.Error("an oversized error body was not marked truncated")
 	}
@@ -85,6 +90,7 @@ func (b *trackedBody) Close() error { b.closed = true; return nil }
 func TestVerboseClosesErrorBodies(t *testing.T) {
 	body := &trackedBody{Reader: strings.NewReader(strings.Repeat("e", verboseBodyLimit*2))}
 	resp, _ := logged(t, http.StatusServiceUnavailable, body)
+	defer resp.Body.Close()
 	if !body.closed {
 		t.Error("the error body's connection was left open")
 	}
@@ -102,10 +108,13 @@ func TestVerboseRedactsPreauthenticatedURLs(t *testing.T) {
 		"https://contoso-my.sharepoint.com/personal/x/_layouts/15/download.aspx?tempauth=SECRET-TOKEN",
 		"https://graph.microsoft.com/v1.0/me/messages?$top=5",
 	} {
-		req, _ := http.NewRequest(http.MethodGet, raw, nil)
-		_, _ = m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
+		req, _ := http.NewRequest(http.MethodGet, raw, http.NoBody)
+		resp, _ := m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, errors.New(`Get "` + raw + `": connection reset`)
 		}), 0, req)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 	}
 	out := log.String()
 	if strings.Contains(out, "SECRET-TOKEN") || strings.Contains(out, "download.aspx") {
@@ -119,6 +128,7 @@ func TestVerboseRedactsPreauthenticatedURLs(t *testing.T) {
 // An error body past the cap ends in an error, not a clean EOF.
 func TestVerboseOversizedErrorBodyIsNotComplete(t *testing.T) {
 	resp, _ := logged(t, http.StatusBadRequest, io.NopCloser(strings.NewReader(strings.Repeat("e", maxErrorBody+10))))
+	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err == nil || len(data) != maxErrorBody {
 		t.Errorf("read %d bytes, err %v; want %d bytes then an error", len(data), err, maxErrorBody)
@@ -144,9 +154,9 @@ func TestVerboseWithholdsCredentialCarriers(t *testing.T) {
 	for _, tc := range cases {
 		var log bytes.Buffer
 		m := &loggingMiddleware{out: &log}
-		req, _ := http.NewRequest(http.MethodGet, tc.url, nil)
+		req, _ := http.NewRequest(http.MethodGet, tc.url, http.NoBody)
 		req.Header.Set("Referer", "https://x/?sig=SECRET-TOKEN")
-		_, err := m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
+		resp, err := m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
 			h := tc.header
 			if h == nil {
 				h = http.Header{}
@@ -157,6 +167,7 @@ func TestVerboseWithholdsCredentialCarriers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		_ = resp.Body.Close()
 		if strings.Contains(log.String(), "SECRET-TOKEN") {
 			t.Errorf("%s (HTTP %d) leaked a credential:\n%s", tc.url, tc.status, log.String())
 		}
@@ -164,11 +175,14 @@ func TestVerboseWithholdsCredentialCarriers(t *testing.T) {
 	// Graph's own error bodies and OData paging stay visible for diagnosis.
 	var log bytes.Buffer
 	m := &loggingMiddleware{out: &log}
-	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=page2", nil)
-	_, _ = m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
+	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=page2", http.NoBody)
+	resp, _ := m.Intercept(pipelineFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 400, Status: "Bad Request", Header: http.Header{"Request-Id": {"rid-1"}},
 			Body: io.NopCloser(strings.NewReader(`{"error":{"code":"BadRequest"}}`)), Request: r}, nil
 	}), 0, req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
 	for _, want := range []string{"$skiptoken=page2", "rid-1", `"code":"BadRequest"`} {
 		if !strings.Contains(log.String(), want) {
 			t.Errorf("verbose log lost %s:\n%s", want, log.String())
@@ -182,10 +196,13 @@ func TestVerboseTransportErrorsAreLoggedByKind(t *testing.T) {
 	var log bytes.Buffer
 	m := &loggingMiddleware{out: &log}
 	raw := `https://graph.microsoft.com/v1.0/me?access_token=SECRET-TOKEN&x="q"`
-	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me", nil)
-	_, err := m.Intercept(pipelineFunc(func(*http.Request) (*http.Response, error) {
+	req, _ := http.NewRequest(http.MethodGet, "https://graph.microsoft.com/v1.0/me", http.NoBody)
+	resp, err := m.Intercept(pipelineFunc(func(*http.Request) (*http.Response, error) {
 		return nil, &url.Error{Op: "Get", URL: raw, Err: errors.New("connection reset")}
 	}), 0, req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
 	if err == nil {
 		t.Fatal("error swallowed")
 	}
