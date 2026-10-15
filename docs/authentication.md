@@ -111,3 +111,17 @@ directory for both builds shares the config and any file-backend tokens.
 Refresh tokens are stored in the OS credential manager. Access tokens are held
 in memory and are not persisted. Headless file-backend environments must set
 `OLK_KEYRING_PASSWORD` and protect the config directory.
+
+### Concurrent processes on Linux
+
+Credential reads, refreshes and writes use a per-account file lock. On Linux,
+the lock directory follows `XDG_CACHE_HOME` (or defaults to `$HOME/.cache`).
+Processes that share an OS credential-store entry must use the same cache
+directory, even when they use different `OLK_CONFIG_DIR` values.
+
+If, for example, an MCP server and a CLI command use different cache directories,
+they take separate locks. Overlapping refreshes can overwrite stored tokens and
+cause authentication failures; a refresh overlapping `olk auth logout` can
+restore credentials after logout deletes them. Keep the cache environment
+consistent across processes. If that is not possible, stop other processes
+using the account before signing out and avoid concurrent credential operations.
