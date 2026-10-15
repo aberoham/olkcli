@@ -93,3 +93,40 @@ func TestNoSendGuardBlocksSends(t *testing.T) {
 		}
 	}
 }
+
+// Rules and automatic replies send mail later, so --no-send refuses the forms
+// that do and allows the ones that don't.
+func TestNoSendGuardsDeferredSending(t *testing.T) {
+	c := &Client{noSend: true}
+	ctx := context.Background()
+	if _, err := c.CreateMailRule(ctx, "", "fwd", "a@example.com", "", false, "", false, false, "b@example.com", ""); !errors.Is(err, ErrNoSend) {
+		t.Errorf("forwarding rule under --no-send = %v, want ErrNoSend", err)
+	}
+	for _, status := range []string{"alwaysEnabled", "scheduled"} {
+		if err := c.SetAutoReply(ctx, "", status, "away", "", "", "", ""); !errors.Is(err, ErrNoSend) {
+			t.Errorf("auto-reply %s under --no-send = %v, want ErrNoSend", status, err)
+		}
+	}
+	// Turning replies off, and a rule that only files mail, notify no one: they
+	// get past the send guard and fail later on the nil test client instead.
+	if err := guardOutcome(func() error { return c.SetAutoReply(ctx, "", "disabled", "", "", "", "", "") }); errors.Is(err, ErrNoSend) {
+		t.Error("disabling auto-replies refused under --no-send")
+	}
+	if err := guardOutcome(func() error {
+		_, err := c.CreateMailRule(ctx, "", "file", "a@example.com", "", false, "", true, false, "", "")
+		return err
+	}); errors.Is(err, ErrNoSend) {
+		t.Error("a non-forwarding rule refused under --no-send")
+	}
+}
+
+// guardOutcome runs call, turning the nil-client panic past the guards into a
+// plain error.
+func guardOutcome(call func() error) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errors.New("reached Graph")
+		}
+	}()
+	return call()
+}
