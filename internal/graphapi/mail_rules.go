@@ -20,8 +20,8 @@ type MailRule struct {
 	DisplayName string `json:"displayName" untrusted:"true"`
 	Sequence    int32  `json:"sequence"`
 	IsEnabled   bool   `json:"isEnabled"`
-	Conditions  string `json:"conditions"`
-	Actions     string `json:"actions"`
+	Conditions  string `json:"conditions" untrusted:"true"`
+	Actions     string `json:"actions" untrusted:"true"`
 }
 
 func (c *Client) ListMailRules(ctx context.Context, target string) ([]MailRule, error) {

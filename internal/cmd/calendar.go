@@ -318,7 +318,9 @@ func (c *CalendarUpdateCmd) Run(ctx *RunContext) error {
 		end = &t
 	}
 
-	if c.AllDay != nil && c.Timed != nil {
+	// --timed asks for a conversion; --timed=false asks for none.
+	timed := c.Timed != nil && *c.Timed
+	if c.AllDay != nil && timed {
 		return fmt.Errorf("--all-day and --timed are mutually exclusive")
 	}
 	if c.Body != nil && c.ClearBody {
@@ -331,7 +333,7 @@ func (c *CalendarUpdateCmd) Run(ctx *RunContext) error {
 	if c.AllDay != nil {
 		allDay = c.AllDay
 	}
-	if c.Timed != nil {
+	if timed {
 		v := false
 		allDay = &v
 	}

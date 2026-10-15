@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +40,19 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 			return errorResult(err.Error()), nil
 		}
 
+		// The deadline covers waiting for a turn as well as running, so a call
+		// queued behind a stuck one gives up rather than waiting forever.
+		callCtx, cancel := context.WithTimeout(ctx, callTimeout(b.env.timeout))
+		defer cancel()
+
+		// Calls run one at a time, parser construction included: kong reads
+		// os.Stdout and os.Stderr, which a running call has swapped.
+		release, err := acquireCallSlot(callCtx)
+		if err != nil {
+			return errorResult(fmt.Sprintf("not run: %v while waiting for another tool call", err)), nil
+		}
+		defer release()
+
 		cli, kctx, err := prepareCall(argv, &b.env)
 		if err != nil {
 			var bad *argvError
@@ -46,40 +61,38 @@ func makeHandler(b *toolBinding) mcp.ToolHandler {
 			}
 			return nil, err
 		}
-
-		timeout := cli.Timeout
-		if timeout <= 0 {
-			timeout = 60
+		if err := callCtx.Err(); err != nil {
+			return errorResult(fmt.Sprintf("not run: %v", err)), nil
 		}
-		if timeout > 600 {
-			timeout = 600
+
+		// A call's local writes are always confined; a binding without a
+		// scope refuses them all.
+		saves := b.env.saves
+		if saves == nil {
+			saves = &saveScope{refusal: "no --download-dir is set"}
 		}
-		callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-		defer cancel()
+		runCtx := &RunContext{Ctx: callCtx, Flags: &cli.RootFlags, saves: saves, stdinIsProtocol: true}
 
-		runCtx := &RunContext{Ctx: callCtx, Flags: &cli.RootFlags}
-
-		stdout, stderr, runErr := captureStd(func() error {
+		limit := b.maxOutputBytes
+		if limit <= 0 {
+			limit = defaultMaxOutputBytes
+		}
+		stdout, stderr, runErr := captureStdLimit(limit, func() error {
 			return kctx.Run(runCtx)
 		})
+		// Mark truncation on each stream as captured, before any trimming
+		// could bring it back under the cap and hide the cut.
+		stdout, stderr = capText(stdout, limit), capText(stderr, limit)
 
 		if runErr != nil {
-			parts := []string{}
-			if s := strings.TrimSpace(stdout); s != "" {
-				parts = append(parts, s)
-			}
-			if s := strings.TrimSpace(stderr); s != "" {
-				parts = append(parts, s)
-			}
-			parts = append(parts, "error: "+runErr.Error())
-			return errorResult(strings.Join(parts, "\n")), nil
+			return failedResult(stdout, stderr, runErr, limit), nil
 		}
 
 		text := stdout
 		if s := strings.TrimSpace(stderr); s != "" {
 			text = strings.TrimRight(stdout, "\n") + "\n[stderr]\n" + s
 		}
-		text = capText(text, b.maxOutputBytes)
+		text = capText(text, limit)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: text}},
 		}, nil
@@ -201,6 +214,87 @@ func rejectUnknownArgs(b *toolBinding, args map[string]any) error {
 	return nil
 }
 
+// callSlot admits one tool call at a time. Unlike a mutex, waiting for it
+// honours the call's cancellation and deadline.
+var callSlot = make(chan struct{}, 1)
+
+func acquireCallSlot(ctx context.Context) (release func(), err error) {
+	select {
+	case callSlot <- struct{}{}:
+		return func() { <-callSlot }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// callTimeout is a call's whole budget, from the server's --timeout: 60
+// seconds when unset, at most 600.
+func callTimeout(seconds int) time.Duration {
+	if seconds <= 0 {
+		seconds = 60
+	}
+	if seconds > 600 {
+		seconds = 600
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// outFlagName is the flag through which a tool writes local files.
+const outFlagName = "out"
+
+// withDownloadOut takes an agent's relative out path, or the flag's default,
+// under the operator's --download-dir. Kong would otherwise resolve both
+// against the server's working directory. The command's saveScope still checks
+// whatever results, so this only decides where a relative path points.
+func withDownloadOut(b *toolBinding, args map[string]any) map[string]any {
+	if !b.env.savesEnabled() {
+		return args
+	}
+	for _, f := range b.node.Flags {
+		if f.Name != outFlagName {
+			continue
+		}
+		v, given := args[outFlagName]
+		var out string
+		switch {
+		case given:
+			s := sprintArg(v)
+			if filepath.IsAbs(s) || strings.HasPrefix(s, "~") {
+				return args
+			}
+			out = filepath.Join(b.env.saves.path, s)
+		case f.HasDefault && f.Default != "":
+			out = b.env.saves.path
+		default:
+			return args
+		}
+		copied := make(map[string]any, len(args)+1)
+		for k, val := range args {
+			copied[k] = val
+		}
+		copied[outFlagName] = out
+		return copied
+	}
+	return args
+}
+
+// failedResult reports a failed call: whatever it printed, capped like any
+// output, then the error, which is kept even when the output fills the cap.
+func failedResult(stdout, stderr string, runErr error, limit int) *mcp.CallToolResult {
+	parts := []string{}
+	if s := strings.TrimSpace(stdout); s != "" {
+		parts = append(parts, s)
+	}
+	if s := strings.TrimSpace(stderr); s != "" {
+		parts = append(parts, s)
+	}
+	msg := capText("error: "+runErr.Error(), limit)
+	if len(parts) > 0 {
+		msg = capText(strings.Join(parts, "\n"), limit) + "\n" + msg
+	}
+	return errorResult(msg)
+}
+
 // capText truncates s to at most limit bytes (on a UTF-8 boundary), appending a
 // notice so the agent knows output was clipped rather than silently complete.
 func capText(s string, limit int) string {
@@ -313,6 +407,7 @@ func classifyError(msg string) (code, action string) {
 // precede the literal "--" so kong never treats them as positionals.
 func buildArgv(b *toolBinding, args map[string]any) ([]string, error) {
 	argv := append([]string{}, b.path...)
+	args = withDownloadOut(b, args)
 
 	for _, f := range b.node.Flags {
 		if f.Hidden || f.Name == helpFlagName {
@@ -395,30 +490,35 @@ func buildArgv(b *toolBinding, args map[string]any) ([]string, error) {
 	return argv, nil
 }
 
+// Every value is joined to its flag as --name=value, so a value that begins
+// with "--" stays a value. A plain boolean is a switch, so false leaves it
+// off, as omitting it would; a pointer boolean is a setting the command reads
+// only when given, so an explicit false is passed on: `"all-day": false` must
+// reach calendar update.
 func flagTokens(f *kong.Flag, v any) ([]string, error) {
-	name := "--" + f.Name
+	name := "--" + f.Name + "="
 	switch {
 	case f.IsBool():
 		on, err := asBool(v)
 		if err != nil {
 			return nil, fmt.Errorf("flag %q: %w", f.Name, err)
 		}
-		if on {
-			return []string{name}, nil
+		if !on && f.Target.Kind() != reflect.Pointer {
+			return nil, nil
 		}
-		return nil, nil
+		return []string{name + strconv.FormatBool(on)}, nil
 	case f.IsSlice():
 		arr, ok := v.([]any)
 		if !ok {
 			return nil, fmt.Errorf("flag %q expects an array", f.Name)
 		}
-		toks := make([]string, 0, len(arr)*2)
+		toks := make([]string, 0, len(arr))
 		for _, e := range arr {
-			toks = append(toks, name, sprintArg(e))
+			toks = append(toks, name+sprintArg(e))
 		}
 		return toks, nil
 	default:
-		return []string{name, sprintArg(v)}, nil
+		return []string{name + sprintArg(v)}, nil
 	}
 }
 

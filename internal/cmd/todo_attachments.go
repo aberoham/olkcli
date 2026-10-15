@@ -135,6 +135,12 @@ func (c *TodoAttachDownloadCmd) Run(ctx *RunContext) error {
 	if err != nil {
 		return err
 	}
+	if ctx.Flags.DryRun {
+		fmt.Printf("Would download attachment %s from task %s to %s\n", outfmt.Sanitize(c.AttachmentID),
+			outfmt.Sanitize(c.TaskID), outfmt.Sanitize(c.Out))
+		return nil
+	}
+
 	listID, err := resolveListID(ctx, target, c.List)
 	if err != nil {
 		return err
@@ -162,8 +168,7 @@ func (c *TodoAttachDownloadCmd) Run(ctx *RunContext) error {
 		return fmt.Errorf("writing file: %w", err)
 	}
 
-	fmt.Printf("Saved: %s\n", saved)
-	return nil
+	return printSaved(ctx, saved)
 }
 
 // TodoAttachDeleteCmd deletes an attachment from a task.

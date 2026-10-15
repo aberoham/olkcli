@@ -29,21 +29,63 @@ func TestBuildArgv_Scalars(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildArgv: %v", err)
 	}
-	assertAdjacent(t, argv, "--top", "10")
-	assertAdjacent(t, argv, "--from", "a@b.com")
-	if !contains(argv, "--unread") {
-		t.Errorf("argv %v missing --unread", argv)
+	for _, tok := range []string{"--top=10", "--from=a@b.com", "--unread=true"} {
+		if !contains(argv, tok) {
+			t.Errorf("argv %v missing %s", argv, tok)
+		}
 	}
 }
 
-func TestBuildArgv_BoolFalseOmitted(t *testing.T) {
-	b := testBinding(t, "mail", "list")
-	argv, err := buildArgv(b, map[string]any{"unread": false})
+// A plain boolean is a switch: false leaves it off, so flags in an either-or
+// group, like mail mark's read and unread, can still be sent together.
+func TestBuildArgv_PlainBoolFalseOmitted(t *testing.T) {
+	b := testBinding(t, "mail", "mark")
+	argv, err := buildArgv(b, map[string]any{"id": "M", "read": true, "unread": false})
 	if err != nil {
 		t.Fatalf("buildArgv: %v", err)
 	}
-	if contains(argv, "--unread") {
-		t.Errorf("false bool should be omitted, got %v", argv)
+	for _, tok := range argv {
+		if strings.HasPrefix(tok, "--unread") {
+			t.Errorf("argv %v passes %s", argv, tok)
+		}
+	}
+	if _, _, err := prepareCall(argv, &b.env); err != nil {
+		t.Errorf("read with unread false: %v", err)
+	}
+}
+
+// Values reach the command as given: one beginning with "--" is text, not a
+// flag, and false clears a pointer flag instead of vanishing.
+func TestBuildArgv_ValuesSurviveParsing(t *testing.T) {
+	send := testBinding(t, "mail", "drafts", "create")
+	argv, err := buildArgv(send, map[string]any{"to": []any{"a@b.com"}, "subject": "--no-write is great", "body": "--force"})
+	if err != nil {
+		t.Fatalf("buildArgv: %v", err)
+	}
+	_, kctx, err := prepareCall(argv, &send.env)
+	if err != nil {
+		t.Fatalf("parse %v: %v", argv, err)
+	}
+	draft := kctx.Selected().Target
+	if got := draft.FieldByName("Subject").String(); got != "--no-write is great" {
+		t.Errorf("subject = %q", got)
+	}
+	if got := draft.FieldByName("Body").String(); got != "--force" {
+		t.Errorf("body = %q", got)
+	}
+
+	update := testBinding(t, "calendar", "update")
+	argv, err = buildArgv(update, map[string]any{"id": "E", "all-day": false})
+	if err != nil {
+		t.Fatalf("buildArgv: %v", err)
+	}
+	_, kctx, err = prepareCall(argv, &update.env)
+	if err != nil {
+		t.Fatalf("parse %v: %v", argv, err)
+	}
+	allDay := kctx.Selected().Target.FieldByName("AllDay")
+	if allDay.IsNil() || allDay.Elem().Bool() {
+		t.Errorf("all-day = %v, want an explicit false", allDay)
 	}
 }
 
@@ -56,14 +98,8 @@ func TestBuildArgv_SliceRepeats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildArgv: %v", err)
 	}
-	count := 0
-	for i := 0; i < len(argv)-1; i++ {
-		if argv[i] == "--to" {
-			count++
-		}
-	}
-	if count != 2 {
-		t.Errorf("expected --to repeated twice, got %d in %v", count, argv)
+	if !contains(argv, "--to=a@b.com") || !contains(argv, "--to=c@d.com") {
+		t.Errorf("expected --to repeated for each address in %v", argv)
 	}
 }
 
@@ -111,20 +147,6 @@ func TestSprintArg(t *testing.T) {
 			t.Errorf("sprintArg(%v) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
-}
-
-func assertAdjacent(t *testing.T, argv []string, flag, value string) {
-	t.Helper()
-	for i := 0; i < len(argv)-1; i++ {
-		if argv[i] == flag {
-			if argv[i+1] == value {
-				return
-			}
-			t.Errorf("%s followed by %q, want %q (argv %v)", flag, argv[i+1], value, argv)
-			return
-		}
-	}
-	t.Errorf("flag %s not found in %v", flag, argv)
 }
 
 func indexOf(ss []string, s string) int {

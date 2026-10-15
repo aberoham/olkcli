@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,27 +31,14 @@ const (
 )
 
 func (c *MailSendCmd) Run(ctx *RunContext) error {
-	client, err := ctx.GraphClient()
-	if err != nil {
-		return err
-	}
-
 	target, err := resolveMailboxTarget(ctx.Flags.Mailbox)
 	if err != nil {
 		return err
 	}
 
-	body := c.Body
-	// Read from stdin if no body provided
-	if body == "" {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			data, err := io.ReadAll(io.LimitReader(os.Stdin, 4<<20)) // 4 MB limit
-			if err != nil {
-				return fmt.Errorf("reading stdin: %w", err)
-			}
-			body = strings.TrimSpace(string(data))
-		}
+	body, err := ctx.bodyOrStdin(c.Body)
+	if err != nil {
+		return err
 	}
 
 	if len(body) > maxBodySize {
@@ -63,6 +49,12 @@ func (c *MailSendCmd) Run(ctx *RunContext) error {
 		if err := graphapi.ValidateEmail(addr); err != nil {
 			return err
 		}
+	}
+
+	// Input is checked before signing in, so a bad call fails fast.
+	client, err := ctx.GraphClient()
+	if err != nil {
+		return err
 	}
 
 	// Process attachments

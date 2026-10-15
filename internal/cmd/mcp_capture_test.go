@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -76,4 +77,48 @@ func TestCaptureStd_Concurrent(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// A command printing far past the cap leaves only the cap's worth in memory.
+func TestCaptureStdLimitBoundsWhatIsKept(t *testing.T) {
+	chunk := strings.Repeat("x", 1<<20)
+	out, errOut, err := captureStdLimit(1000, func() error {
+		for i := 0; i < 20; i++ {
+			fmt.Fprint(os.Stdout, chunk)
+			fmt.Fprint(os.Stderr, chunk)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1001 || len(errOut) != 1001 {
+		t.Errorf("kept %d stdout and %d stderr bytes, want 1001 each", len(out), len(errOut))
+	}
+}
+
+// A failed call's output is capped like a successful one's, and the error
+// itself survives the cap.
+func TestFailedResultIsCappedAndKeepsTheError(t *testing.T) {
+	res := failedResult(strings.Repeat("o", 5000), strings.Repeat("e", 5000), errors.New("3 of 3 attachments could not be saved"), 1000)
+	text := resultText(res)
+	if !res.IsError {
+		t.Error("not marked as an error")
+	}
+	if !strings.Contains(text, "3 of 3 attachments could not be saved") {
+		t.Errorf("the error was lost: %s", text)
+	}
+	if len(text) > 3000 {
+		t.Errorf("failed result is %d bytes, want it capped", len(text))
+	}
+}
+
+// Truncation is marked before trimming: output cut just after a newline must
+// still say it was cut.
+func TestTruncationSurvivesTrimming(t *testing.T) {
+	captured := strings.Repeat("x", 1000) + "\n" // limit+1 bytes, as capture keeps
+	text := resultText(failedResult(capText(captured, 1000), "", errors.New("failed"), 1000))
+	if !strings.Contains(text, "output truncated") {
+		t.Errorf("truncation notice lost: %q", text[len(text)-120:])
+	}
 }

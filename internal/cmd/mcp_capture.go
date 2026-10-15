@@ -7,10 +7,9 @@ import (
 	"sync"
 )
 
-// captureMu serializes every tool invocation. captureStd reassigns the
-// process-global os.Stdout/os.Stderr, so two captures must never run
-// concurrently. This makes MCP tool execution effectively single-flight; the
-// limitation is documented in the mcp command help.
+// captureMu keeps two captures from overlapping: captureStd reassigns the
+// process-global os.Stdout/os.Stderr. MCP tool calls are already serialized,
+// parsing included, by callSlot; this guards any other caller.
 var captureMu sync.Mutex
 
 // captureStd runs fn while redirecting os.Stdout and os.Stderr to in-memory
@@ -19,6 +18,14 @@ var captureMu sync.Mutex
 // what keeps command output (221 direct os.Stdout writes plus the outfmt
 // Printer) from corrupting the MCP transport's own use of stdout.
 func captureStd(fn func() error) (stdoutText, stderrText string, runErr error) {
+	return captureStdLimit(-1, fn)
+}
+
+// captureStdLimit is captureStd keeping at most limit+1 bytes of each stream,
+// or all of it when limit is negative, and discarding the rest as it arrives,
+// so a runaway command cannot grow memory without bound. The extra byte lets
+// capText tell that output was cut.
+func captureStdLimit(limit int, fn func() error) (stdoutText, stderrText string, runErr error) {
 	captureMu.Lock()
 	defer captureMu.Unlock()
 
@@ -43,8 +50,17 @@ func captureStd(fn func() error) (stdoutText, stderrText string, runErr error) {
 		errBuf []byte
 	)
 	wg.Add(2)
-	go func() { defer wg.Done(); outBuf, _ = io.ReadAll(outR) }()
-	go func() { defer wg.Done(); errBuf, _ = io.ReadAll(errR) }()
+	drain := func(r io.Reader) []byte {
+		if limit < 0 {
+			data, _ := io.ReadAll(r)
+			return data
+		}
+		data, _ := io.ReadAll(io.LimitReader(r, int64(limit)+1))
+		_, _ = io.Copy(io.Discard, r) // keep the writer from blocking
+		return data
+	}
+	go func() { defer wg.Done(); outBuf = drain(outR) }()
+	go func() { defer wg.Done(); errBuf = drain(errR) }()
 
 	func() {
 		defer func() {
